@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Dataset (grande, no se versiona)
+datasets/
+../datasets/
+data/
+
+# Checkpoints y modelos entrenados
+checkpoints/*.pth
+checkpoints/*.pt
+
+# Resultados y plots
+results/*.json
+results/*.png
+results/*.csv
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Variables de entorno
+.env
+.env.*
