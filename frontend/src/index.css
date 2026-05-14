@@ -1,0 +1,96 @@
+/* src/index.css */
+/* Estilos globales de DetectVID */
+/* Tailwind se inyecta aquí, más los estilos base del sistema */
+
+/* ── Directivas de Tailwind ───────────────────────────────────────── */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Variables CSS (Design Tokens) ───────────────────────────────── */
+/* Estas variables están disponibles en todo el CSS con var(--vine-700) */
+:root {
+  --vine-50:   #f0fdf4;
+  --vine-100:  #dcfce7;
+  --vine-200:  #bbf7d0;
+  --vine-300:  #86efac;
+  --vine-400:  #4ade80;
+  --vine-500:  #22c55e;
+  --vine-600:  #16a34a;
+  --vine-700:  #15803d;
+  --vine-800:  #166534;
+  --vine-900:  #14532d;
+  --vine-950:  #052e16;
+
+  --bg-primary:   #030712;
+  --bg-secondary: #0f172a;
+  --bg-card:      #111827;
+}
+
+/* ── Estilos Base ─────────────────────────────────────────────────── */
+@layer base {
+  /* Modo oscuro (clase "dark" en <html>) — fondo casi negro premium */
+  body {
+    @apply bg-white dark:bg-gray-950 text-gray-900 dark:text-white font-sans antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  /* Selección de texto con color de marca */
+  ::selection {
+    background-color: var(--vine-700);
+    color: white;
+  }
+}
+
+/* ── Scrollbar personalizada (Chrome/Edge/Safari) ─────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111827;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #166534;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #15803d;
+}
+
+/* ── Clases Utilitarias Personalizadas ───────────────────────────── */
+@layer utilities {
+  /* Efecto glass morphism — usado en cards premium */
+  .glass {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Gradiente de marca — de verde oscuro a esmeralda */
+  .gradient-vine {
+    background: linear-gradient(135deg, var(--vine-800) 0%, #059669 100%);
+  }
+
+  /* Gradiente de texto verde (para títulos premium) */
+  .text-gradient-vine {
+    background: linear-gradient(135deg, #4ade80 0%, #059669 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Card estándar del sistema */
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-2xl;
+  }
+
+  /* Transición suave por defecto */
+  .transition-default {
+    @apply transition-all duration-200 ease-in-out;
+  }
+}
