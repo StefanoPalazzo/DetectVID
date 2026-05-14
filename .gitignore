@@ -1,0 +1,63 @@
+# ─── macOS ────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+
+# ─── IDEs ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── Variables de entorno ─────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Python (ml/) ─────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Checkpoints del modelo (archivos grandes)
+ml/checkpoints/*.pth
+ml/checkpoints/*.pt
+
+# Datasets (no se versionan — demasiado grandes)
+ml/data/
+Datasets/
+
+# Resultados y plots
+ml/results/*.json
+ml/results/*.png
+ml/results/*.csv
+
+# Logs
+*.log
+logs/
+
+# ─── Node (backend/) ──────────────────────────────────
+node_modules/
+backend/node_modules/
+
+# ─── React / Vite (frontend/) ─────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.vite/
+
+# ─── Miscelánea ───────────────────────────────────────
+.atl/
+Fuentes.rtf
+Recomendaciones.rtfd/
