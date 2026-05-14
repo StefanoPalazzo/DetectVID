@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PRODUCTOR
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String     @unique
+  password_hash String
+  role          Role       @default(PRODUCTOR)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+  analyses      Analysis[]
+  fincas        Finca[]
+
+  @@map("users")
+}
+
+model Analysis {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Imagen en storage externo
+  imageUrl       String
+  imageProvider  String   @default("cloudinary") // "cloudinary" | "local" | "s3" | "gcs"
+
+  // Resultado del modelo de IA
+  disease        String
+  diseaseKey     String
+  status         String
+  confidence     Int
+  riskLevel      String
+  riskColor      String
+  affectedArea   String
+  urgency        String
+  symptoms       String[]
+  recommendation String
+
+  // Geolocalización (opcional — el usuario puede negar GPS)
+  latitude       Float?
+  longitude      Float?
+
+  // Metadata
+  analysisId     String   @unique
+  processingTime Int?
+  modelName      String
+
+  created_at     DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, created_at(sort: Desc)])
+  @@index([userId, diseaseKey])
+  @@map("analyses")
+}
+
+model Finca {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  color       String   @default("#16a34a")
+  // GeoJSON polygon stored as JSON — array of {lat, lng} objects
+  coordinates Json
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([userId])
+  @@map("fincas")
+}
