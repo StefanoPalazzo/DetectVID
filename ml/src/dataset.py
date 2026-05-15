@@ -3,8 +3,8 @@ dataset.py — Carga, preparación y splits del dataset de hojas de vid
 ═══════════════════════════════════════════════════════════════════════
 
 Pipeline de datos:
-  1. Escanea directorios de cada clase → construye DataFrame (path, label)
-  2. Split estratificado train/val/test (70/15/15)
+  1. Escanea directorios de cada clase → construye DataFrame (path, label, split_hint)
+  2. Split estratificado train/val/test (70/15/15) según la estrategia configurada
   3. Pre-cache: redimensiona imágenes a 224x224 y guarda como tensores .pt
   4. DataLoader con transforms apropiados por split
 
@@ -16,6 +16,16 @@ Pipeline de datos:
   Con pre-cache: la primera ejecución procesa todo (~30s) y guarda tensores .pt.
   Las ejecuciones siguientes cargan directo con torch.load() → ~15ms por batch.
   Es como pre-cocinar los ingredientes antes de empezar a cocinar.
+
+Modos de dataset (DATASET_MODE):
+  "3cls_no_zenodo"  → solo originales, 3 clases. Baseline.
+  "3cls_zenodo"     → originales + zenodo, 3 clases
+  "4cls_zenodo"     → originales + zenodo, 4 clases (agrega "others")
+
+Estrategias de split (SPLIT_MODE):
+  None              → split 70/15/15 puro sobre todo el pool
+  "split_respected" → respeta train/val del zenodo; los originales se splittean
+  "split_mixed"     → mezcla todo y hace split 70/15/15 aleatorio
 
 Referencia: basado en el patrón CatsDogsDataset del notebook Clase_VC,
             pero con splits estratificados (Clasificación_COMPLETO) y cache.
@@ -35,15 +45,29 @@ from PIL import Image
 from sklearn.model_selection import train_test_split
 
 from config import (
-    CLASS_DIRS, CLASS_TO_IDX, IDX_TO_CLASS,
-    TRAIN_RATIO, VAL_RATIO, TEST_RATIO, RANDOM_SEED,
+    CLASS_DIRS, TRAIN_RATIO, VAL_RATIO, TEST_RATIO, RANDOM_SEED,
     INPUT_SIZE, IMAGENET_MEAN, IMAGENET_STD,
     AUGMENTATION_CONFIG, BATCH_SIZE, CACHE_DIR,
+    DATASET_MODE, SPLIT_MODE, BALANCING_MODE,
+    CLASS_TO_IDX_3, CLASS_TO_IDX_4,
 )
 
 
 # ─── Extensiones de imagen admitidas ─────────────────────────────────────────
 VALID_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
+
+
+# ─── Mapeo de clases según modo ───────────────────────────────────────────────
+
+def get_class_mapping(dataset_mode: str) -> Tuple[Dict[str, int], Dict[int, str]]:
+    """
+    Devuelve (CLASS_TO_IDX, IDX_TO_CLASS) según el modo de dataset.
+
+    Para 4 clases, "others" tiene índice 3, así los índices 0-2 son
+    compatibles con los modelos de 3 clases.
+    """
+    mapping = CLASS_TO_IDX_4 if dataset_mode == "4cls_zenodo" else CLASS_TO_IDX_3
+    return mapping, {v: k for k, v in mapping.items()}
 
 
 # ─── Escaneo de archivos ──────────────────────────────────────────────────────
@@ -53,9 +77,14 @@ def scan_class_dir(class_name: str, class_root: Path) -> List[Dict]:
     Recorre recursivamente class_root y devuelve una lista de dicts
     {image_path: str, label: str} por cada imagen encontrada.
 
+    Si la carpeta no existe, imprime un warning y devuelve lista vacía.
     NO verifica integridad en el scan — las imágenes corruptas se manejan
     al cargarlas en __getitem__ (devuelve tensor negro + warning).
     """
+    if not class_root.exists():
+        print(f"  ⚠️  Carpeta no encontrada (se omite): {class_root}")
+        return []
+
     records = []
     for path in class_root.rglob("*"):
         if path.suffix.lower() not in VALID_EXTENSIONS:
@@ -64,29 +93,341 @@ def scan_class_dir(class_name: str, class_root: Path) -> List[Dict]:
     return records
 
 
+def _scan_with_split_hint(class_name: str, class_root: Path, split_hint: str) -> List[Dict]:
+    """
+    Como scan_class_dir pero agrega split_hint al record.
+
+    split_hint puede ser "train", "val" o "free" (libre para asignar).
+    Se usa en split_respected para forzar imágenes del zenodo a su split correcto.
+    """
+    if not class_root.exists():
+        print(f"  ⚠️  Carpeta no encontrada (se omite): {class_root}")
+        return []
+
+    records = []
+    for path in class_root.rglob("*"):
+        if path.suffix.lower() not in VALID_EXTENSIONS:
+            continue
+        records.append({
+            "image_path": str(path),
+            "label":      class_name,
+            "split_hint": split_hint,
+        })
+    return records
+
+
+# ─── Construcción del DataFrame por modo ─────────────────────────────────────
+
+def build_dataframe_for_experiment(
+    dataset_mode: str,
+    split_mode: Optional[str],
+) -> pd.DataFrame:
+    """
+    Construye el DataFrame completo según el modo de experimento.
+
+    El DataFrame tiene columnas:
+      - image_path: ruta absoluta a la imagen
+      - label:      clase (string)
+      - split:      "train", "val" o "test" — asignado según la estrategia
+
+    Args:
+        dataset_mode: "3cls_no_zenodo" | "3cls_zenodo" | "4cls_zenodo"
+        split_mode:   None | "split_respected" | "split_mixed"
+
+    Returns:
+        DataFrame con columnas [image_path, label, split]
+    """
+    print(f"\n[Dataset] Modo: {dataset_mode} | Split: {split_mode}")
+
+    if dataset_mode == "3cls_no_zenodo":
+        return _build_3cls_no_zenodo()
+
+    elif dataset_mode == "3cls_zenodo":
+        if split_mode == "split_respected":
+            return _build_3cls_zenodo_respected()
+        elif split_mode == "split_mixed":
+            return _build_3cls_zenodo_mixed()
+        else:
+            raise ValueError(f"split_mode '{split_mode}' no válido para dataset_mode '{dataset_mode}'")
+
+    elif dataset_mode == "4cls_zenodo":
+        if split_mode == "split_respected":
+            return _build_4cls_zenodo_respected()
+        elif split_mode == "split_mixed":
+            return _build_4cls_zenodo_mixed()
+        else:
+            raise ValueError(f"split_mode '{split_mode}' no válido para dataset_mode '{dataset_mode}'")
+
+    else:
+        raise ValueError(f"dataset_mode '{dataset_mode}' no reconocido")
+
+
+def _build_3cls_no_zenodo() -> pd.DataFrame:
+    """
+    Solo dataset original, 3 clases (healthy/oidio/peronospora). Baseline.
+    Split 70/15/15 sobre todo el pool.
+    """
+    print("  [3cls_no_zenodo] Escaneando originales...")
+    records = []
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r = scan_class_dir(clase, CLASS_DIRS[clase])
+        records.extend(r)
+        print(f"    {clase:12s} → {len(r):5d} imágenes")
+
+    df = pd.DataFrame(records)
+    print(f"  Total: {len(df)} imágenes")
+    return _apply_split_70_15_15(df)
+
+
+def _build_3cls_zenodo_respected() -> pd.DataFrame:
+    """
+    Originales + zenodo, 3 clases.
+    Las imágenes de zenodo_*_train van FORZOSAMENTE al split train.
+    Las imágenes de zenodo_*_val van FORZOSAMENTE al split val.
+    Las imágenes originales se dividen 70/15/15 y su test set es el test final.
+    """
+    print("  [3cls_zenodo / split_respected] Escaneando con splits forzados...")
+    records = []
+
+    # Originales — se splitearán libremente
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r = _scan_with_split_hint(clase, CLASS_DIRS[clase], "free")
+        records.extend(r)
+        print(f"    {clase:12s} (original) → {len(r):5d} imágenes")
+
+    # Zenodo — split forzado
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r_train = _scan_with_split_hint(clase, CLASS_DIRS[f"zenodo_{clase}_train"], "train")
+        r_val   = _scan_with_split_hint(clase, CLASS_DIRS[f"zenodo_{clase}_val"],   "val")
+        records.extend(r_train)
+        records.extend(r_val)
+        print(f"    {clase:12s} (zenodo)   → {len(r_train):5d} train + {len(r_val):5d} val")
+
+    df_all = pd.DataFrame(records)
+    return _apply_split_respected(df_all)
+
+
+def _build_3cls_zenodo_mixed() -> pd.DataFrame:
+    """
+    Originales + zenodo (mezclando train y val del zenodo), 3 clases.
+    Split 70/15/15 sobre TODO el pool mezclado.
+    """
+    print("  [3cls_zenodo / split_mixed] Escaneando y mezclando todo...")
+    records = []
+
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r_orig  = scan_class_dir(clase, CLASS_DIRS[clase])
+        r_train = scan_class_dir(clase, CLASS_DIRS[f"zenodo_{clase}_train"])
+        r_val   = scan_class_dir(clase, CLASS_DIRS[f"zenodo_{clase}_val"])
+        records.extend(r_orig + r_train + r_val)
+        print(f"    {clase:12s} → {len(r_orig):5d} orig + {len(r_train):5d} zen_train + {len(r_val):5d} zen_val")
+
+    df = pd.DataFrame(records)
+    print(f"  Total: {len(df)} imágenes")
+    return _apply_split_70_15_15(df)
+
+
+def _build_4cls_zenodo_respected() -> pd.DataFrame:
+    """
+    Igual que 3cls_respected pero agrega la clase "others" usando
+    zenodo_others_* + Datasets/otros/.
+    """
+    print("  [4cls_zenodo / split_respected] Escaneando con splits forzados (4 clases)...")
+    records = []
+
+    # Originales — se splitearán libremente
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r = _scan_with_split_hint(clase, CLASS_DIRS[clase], "free")
+        records.extend(r)
+        print(f"    {clase:12s} (original) → {len(r):5d} imágenes")
+
+    # Otros originales — libres
+    r_otros = _scan_with_split_hint("others", CLASS_DIRS["others"], "free")
+    records.extend(r_otros)
+    print(f"    {'others':12s} (original) → {len(r_otros):5d} imágenes")
+
+    # Zenodo 3 clases — split forzado
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r_train = _scan_with_split_hint(clase, CLASS_DIRS[f"zenodo_{clase}_train"], "train")
+        r_val   = _scan_with_split_hint(clase, CLASS_DIRS[f"zenodo_{clase}_val"],   "val")
+        records.extend(r_train + r_val)
+        print(f"    {clase:12s} (zenodo)   → {len(r_train):5d} train + {len(r_val):5d} val")
+
+    # Zenodo others — split forzado
+    r_oth_train = _scan_with_split_hint("others", CLASS_DIRS["zenodo_others_train"], "train")
+    r_oth_val   = _scan_with_split_hint("others", CLASS_DIRS["zenodo_others_val"],   "val")
+    records.extend(r_oth_train + r_oth_val)
+    print(f"    {'others':12s} (zenodo)   → {len(r_oth_train):5d} train + {len(r_oth_val):5d} val")
+
+    df_all = pd.DataFrame(records)
+    return _apply_split_respected(df_all)
+
+
+def _build_4cls_zenodo_mixed() -> pd.DataFrame:
+    """
+    Igual que 3cls_mixed pero agrega la clase "others" usando
+    zenodo_others_* + Datasets/otros/.
+    """
+    print("  [4cls_zenodo / split_mixed] Escaneando y mezclando todo (4 clases)...")
+    records = []
+
+    for clase in ["healthy", "oidio", "peronospora"]:
+        r_orig  = scan_class_dir(clase, CLASS_DIRS[clase])
+        r_train = scan_class_dir(clase, CLASS_DIRS[f"zenodo_{clase}_train"])
+        r_val   = scan_class_dir(clase, CLASS_DIRS[f"zenodo_{clase}_val"])
+        records.extend(r_orig + r_train + r_val)
+        print(f"    {clase:12s} → {len(r_orig):5d} orig + {len(r_train):5d} zen_train + {len(r_val):5d} zen_val")
+
+    r_otros = scan_class_dir("others", CLASS_DIRS["others"])
+    r_oth_train = scan_class_dir("others", CLASS_DIRS["zenodo_others_train"])
+    r_oth_val   = scan_class_dir("others", CLASS_DIRS["zenodo_others_val"])
+    records.extend(r_otros + r_oth_train + r_oth_val)
+    print(f"    {'others':12s} → {len(r_otros):5d} orig + {len(r_oth_train):5d} zen_train + {len(r_oth_val):5d} zen_val")
+
+    df = pd.DataFrame(records)
+    print(f"  Total: {len(df)} imágenes")
+    return _apply_split_70_15_15(df)
+
+
+# ─── Estrategias de split ─────────────────────────────────────────────────────
+
+def _apply_split_70_15_15(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Divide el DataFrame en train/val/test con ratio 70/15/15.
+    La división es estratificada para mantener la proporción de clases.
+    """
+    test_ratio = 1.0 - TRAIN_RATIO - VAL_RATIO
+
+    train_val_df, test_df = train_test_split(
+        df,
+        test_size=test_ratio,
+        stratify=df["label"],
+        random_state=RANDOM_SEED,
+    )
+
+    val_relative = VAL_RATIO / (TRAIN_RATIO + VAL_RATIO)
+    train_df, val_df = train_test_split(
+        train_val_df,
+        test_size=val_relative,
+        stratify=train_val_df["label"],
+        random_state=RANDOM_SEED,
+    )
+
+    train_df = train_df.copy()
+    val_df   = val_df.copy()
+    test_df  = test_df.copy()
+
+    train_df["split"] = "train"
+    val_df["split"]   = "val"
+    test_df["split"]  = "test"
+
+    result = pd.concat([train_df, val_df, test_df]).reset_index(drop=True)
+    # Limpiar split_hint si existe (no la necesitamos más)
+    if "split_hint" in result.columns:
+        result = result.drop(columns=["split_hint"])
+    return result
+
+
+def _apply_split_respected(df_all: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aplica split respetando los hints del zenodo.
+
+    - Imágenes con split_hint="train" → van directo a train
+    - Imágenes con split_hint="val"   → van directo a val
+    - Imágenes con split_hint="free"  → se dividen 70/15/15
+
+    Las imágenes "free" aportan su porción test al test set final.
+    Los forzados train/val del zenodo NO van al test set.
+    """
+    # Separar por hint
+    forced_train = df_all[df_all["split_hint"] == "train"].copy()
+    forced_val   = df_all[df_all["split_hint"] == "val"].copy()
+    free_df      = df_all[df_all["split_hint"] == "free"].copy()
+
+    forced_train["split"] = "train"
+    forced_val["split"]   = "val"
+
+    # Split libre 70/15/15 sobre los originales
+    if len(free_df) > 0:
+        free_split = _apply_split_70_15_15(free_df)
+    else:
+        free_split = pd.DataFrame(columns=["image_path", "label", "split"])
+
+    result = pd.concat([
+        forced_train[["image_path", "label", "split"]],
+        forced_val[["image_path", "label", "split"]],
+        free_split[["image_path", "label", "split"]],
+    ]).reset_index(drop=True)
+
+    return result
+
+
+# ─── Undersampling ────────────────────────────────────────────────────────────
+
+def undersample_majority_class(df: pd.DataFrame, strategy: str = "undersampled") -> pd.DataFrame:
+    """
+    Submuestrea la clase mayoritaria para reducir el desbalance.
+
+    Encuentra la clase mayoritaria y la reduce al nivel de la segunda clase
+    más grande. Esto preserva más datos que reducir a la minoritaria.
+
+    Solo afecta el split "train" — val y test quedan intactos para
+    que la evaluación sea honesta sobre la distribución real.
+
+    Args:
+        df:       DataFrame con columnas [image_path, label, split]
+        strategy: "undersampled" activa el subsampling (parámetro para extensibilidad)
+
+    Returns:
+        DataFrame con la clase mayoritaria reducida en el split train
+    """
+    if strategy != "undersampled":
+        return df
+
+    train_df = df[df["split"] == "train"].copy()
+    other_df = df[df["split"] != "train"].copy()
+
+    # Contar imágenes por clase en train
+    conteos = train_df["label"].value_counts()
+
+    if len(conteos) < 2:
+        print("  ⚠️  Undersampling: solo hay una clase en train, se omite")
+        return df
+
+    # Clase mayoritaria → reducir al nivel de la segunda más grande
+    clase_mayor   = conteos.index[0]
+    nivel_objetivo = conteos.iloc[1]  # Segunda clase más grande
+
+    print(f"  [Undersampling] '{clase_mayor}': {conteos.iloc[0]} → {nivel_objetivo} imágenes")
+
+    # Mantener el resto igual, subsampling solo de la mayoritaria
+    clase_mayor_df   = train_df[train_df["label"] == clase_mayor].sample(
+        n=nivel_objetivo,
+        random_state=RANDOM_SEED,
+    )
+    resto_df = train_df[train_df["label"] != clase_mayor]
+
+    train_df_balanceado = pd.concat([clase_mayor_df, resto_df]).sample(
+        frac=1,
+        random_state=RANDOM_SEED,
+    ).reset_index(drop=True)
+
+    result = pd.concat([train_df_balanceado, other_df]).reset_index(drop=True)
+    print(f"  [Undersampling] Train después: {train_df_balanceado['label'].value_counts().to_dict()}")
+    return result
+
+
+# ─── Compatibilidad hacia atrás ───────────────────────────────────────────────
+
 def build_dataframe() -> pd.DataFrame:
     """
-    Construye el DataFrame completo con todas las imágenes de las 3 clases.
+    Versión legacy de build_dataframe. Usa los parámetros del config.
 
-    Este DataFrame es el "registro" central del dataset — cada fila tiene:
-    - image_path: ruta absoluta a la imagen
-    - label: nombre de la clase (string)
-
-    Similar a mydataset = pd.DataFrame(columns=['image_path', 'label'])
-    del notebook Clase_VC.
+    Mantiene compatibilidad con código que llama a build_dataframe() directamente.
+    Para experimentos, usar build_dataframe_for_experiment() explícitamente.
     """
-    all_records = []
-    for class_name, class_root in CLASS_DIRS.items():
-        records = scan_class_dir(class_name, class_root)
-        all_records.extend(records)
-        print(f"  {class_name:12s} → {len(records):5d} imágenes  ({class_root})")
+    return build_dataframe_for_experiment(DATASET_MODE, SPLIT_MODE)
 
-    df = pd.DataFrame(all_records)
-    print(f"\n  Total: {len(df)} imágenes | Clases: {df['label'].nunique()}")
-    return df
-
-
-# ─── Splits ──────────────────────────────────────────────────────────────────
 
 def split_dataframe(
     df: pd.DataFrame,
@@ -94,27 +435,25 @@ def split_dataframe(
     val_ratio:   float = VAL_RATIO,
     seed:        int   = RANDOM_SEED,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Versión legacy. Si el DataFrame ya tiene columna 'split', la usa directamente.
+    Si no, aplica split 70/15/15. Mantiene compatibilidad hacia atrás.
+    """
+    if "split" in df.columns:
+        train_df = df[df["split"] == "train"].reset_index(drop=True)
+        val_df   = df[df["split"] == "val"].reset_index(drop=True)
+        test_df  = df[df["split"] == "test"].reset_index(drop=True)
+        return train_df, val_df, test_df
 
+    # Fallback: split clásico
     test_ratio = 1.0 - train_ratio - val_ratio
-
-    # Paso 1: separar test del resto
     train_val_df, test_df = train_test_split(
-        df,
-        test_size=test_ratio,
-        stratify=df["label"],
-        random_state=seed,
+        df, test_size=test_ratio, stratify=df["label"], random_state=seed
     )
-
-    # Paso 2: separar val del train_val
-    # val_size es RELATIVO al subconjunto train_val (no al total)
     val_relative = val_ratio / (train_ratio + val_ratio)
     train_df, val_df = train_test_split(
-        train_val_df,
-        test_size=val_relative,
-        stratify=train_val_df["label"],
-        random_state=seed,
+        train_val_df, test_size=val_relative, stratify=train_val_df["label"], random_state=seed
     )
-
     return (
         train_df.reset_index(drop=True),
         val_df.reset_index(drop=True),
@@ -128,16 +467,20 @@ def print_split_stats(
     test_df:  pd.DataFrame,
 ) -> None:
     """Imprime tabla de distribución de clases por split."""
-    print("\n" + "─" * 55)
-    print(f"{'Split':<10} {'healthy':>10} {'oidio':>10} {'peronospora':>12} {'Total':>7}")
-    print("─" * 55)
-    for name, split in [("train", train_df), ("val", val_df), ("test", test_df)]:
+    clases = sorted(set(train_df["label"].tolist() + val_df["label"].tolist() + test_df["label"].tolist()))
+    ancho  = max(len(c) for c in clases) + 2
+
+    encabezado = f"{'Split':<10}" + "".join(f"{c:>{ancho}}" for c in clases) + f"{'Total':>8}"
+    print("\n" + "─" * len(encabezado))
+    print(encabezado)
+    print("─" * len(encabezado))
+
+    for nombre, split in [("train", train_df), ("val", val_df), ("test", test_df)]:
         counts = split["label"].value_counts()
-        h = counts.get("healthy",     0)
-        o = counts.get("oidio",       0)
-        p = counts.get("peronospora", 0)
-        print(f"{name:<10} {h:>10} {o:>10} {p:>12} {len(split):>7}")
-    print("─" * 55 + "\n")
+        fila   = f"{nombre:<10}" + "".join(f"{counts.get(c, 0):>{ancho}}" for c in clases) + f"{len(split):>8}"
+        print(fila)
+
+    print("─" * len(encabezado) + "\n")
 
 
 # ─── Pre-cache de imágenes ───────────────────────────────────────────────────
@@ -217,7 +560,7 @@ def ensure_cache(
             ("test",  test_df,  test_cache),
         ]:
             print(f"  Procesando {name}...")
-            _build_cache(split_df, cache_dir)
+            _build_cache(split_df.reset_index(drop=True), cache_dir)
         print("\n[Cache] ✓ Cache listo\n")
     else:
         print("[Cache] ✓ Usando cache existente\n")
@@ -226,18 +569,6 @@ def ensure_cache(
 
 
 # ─── Transformaciones ────────────────────────────────────────────────────────
-#
-# Las transformaciones son operaciones que se aplican a cada imagen antes
-# de pasarla al modelo. Hay dos tipos:
-#
-# 1. Augmentation (solo train): variaciones artificiales para que el modelo
-#    vea la "misma" imagen de formas distintas → mejor generalización.
-#
-# 2. Normalización (train + val + test): ajusta los valores de los pixels
-#    a las estadísticas de ImageNet (el backbone fue entrenado así).
-#
-# NOTA: El Resize ya se hizo en el pre-cache. Las imágenes llegan como
-# tensores de (3, 224, 224) — no necesitamos Resize ni ToTensor aquí.
 
 def get_train_transform() -> transforms.Compose:
     """
@@ -281,7 +612,7 @@ def get_eval_transform() -> transforms.Compose:
 
 class VidLeafDataset(Dataset):
     """
-    Dataset de hojas de vid para clasificación en 3 clases.
+    Dataset de hojas de vid para clasificación.
 
     Dos modos de operación:
     1. Con cache (default): carga tensores .pt pre-procesados → RÁPIDO
@@ -304,12 +635,14 @@ class VidLeafDataset(Dataset):
     def __init__(
         self,
         df: pd.DataFrame,
+        class_to_idx: Dict[str, int],
         transform: Optional[transforms.Compose] = None,
         cache_dir: Optional[Path] = None,
     ):
-        self.df        = df
-        self.transform = transform
-        self.cache_dir = cache_dir  # None = modo sin cache (PIL directo)
+        self.df           = df.reset_index(drop=True)
+        self.class_to_idx = class_to_idx
+        self.transform    = transform
+        self.cache_dir    = cache_dir  # None = modo sin cache (PIL directo)
 
     def __len__(self) -> int:
         return len(self.df)
@@ -317,7 +650,7 @@ class VidLeafDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         row       = self.df.iloc[idx]
         label_str = row["label"]
-        label_idx = CLASS_TO_IDX[label_str]
+        label_idx = self.class_to_idx[label_str]
 
         if self.cache_dir is not None:
             # Modo cache: carga tensor pre-procesado
@@ -366,13 +699,19 @@ def _resolve_num_workers() -> int:
 
 
 def get_dataloaders(
-    batch_size: int = BATCH_SIZE,
-    num_workers: int = None,
-    use_cache: bool = True,
+    batch_size:     int           = BATCH_SIZE,
+    num_workers:    Optional[int] = None,
+    use_cache:      bool          = False,
+    dataset_mode:   str           = DATASET_MODE,
+    split_mode:     Optional[str] = SPLIT_MODE,
+    balancing_mode: str           = BALANCING_MODE,
 ) -> Tuple[DataLoader, DataLoader, DataLoader, Dict]:
     """
     Punto de entrada principal. Devuelve train/val/test DataLoaders
     y un diccionario con estadísticas del split.
+
+    Soporta todos los modos de experimento definidos en config.py.
+    Compatible hacia atrás: llamar sin argumentos usa los defaults del config.
 
     Equivalente a este bloque del notebook Clase_VC:
         train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
@@ -382,9 +721,12 @@ def get_dataloaders(
     Pero con cache de tensores, class weights, y configuración automática.
 
     Args:
-        batch_size: tamaño del batch (default: 64)
-        num_workers: workers para data loading (None = autodetect)
-        use_cache: True = usar pre-cache de tensores (recomendado)
+        batch_size:     tamaño del batch (default: 64)
+        num_workers:    workers para data loading (None = autodetect)
+        use_cache:      True = usar pre-cache de tensores (recomendado)
+        dataset_mode:   modo de composición del dataset
+        split_mode:     estrategia de split
+        balancing_mode: estrategia de balanceo de clases
 
     Returns:
         train_loader, val_loader, test_loader, split_info
@@ -393,12 +735,24 @@ def get_dataloaders(
         num_workers = _resolve_num_workers()
     print(f"[Dataset] num_workers={num_workers} (autodetectado)")
 
-    print("\n[Dataset] Escaneando imágenes...")
-    df = build_dataframe()
+    # ── Construir DataFrame según el modo ─────────────────────────────────
+    df = build_dataframe_for_experiment(dataset_mode, split_mode)
 
-    print("\n[Dataset] Dividiendo en train/val/test...")
+    # ── Separar splits ────────────────────────────────────────────────────
     train_df, val_df, test_df = split_dataframe(df)
     print_split_stats(train_df, val_df, test_df)
+
+    # ── Balanceo ──────────────────────────────────────────────────────────
+    if balancing_mode == "undersampled":
+        # Aplicar undersampling sobre el DataFrame completo y re-separar
+        df_balanceado = undersample_majority_class(df, strategy="undersampled")
+        train_df, val_df, test_df = split_dataframe(df_balanceado)
+        print("\n  Distribución después del undersampling:")
+        print_split_stats(train_df, val_df, test_df)
+
+    # ── Mapeo de clases según el modo ─────────────────────────────────────
+    class_to_idx, idx_to_class = get_class_mapping(dataset_mode)
+    n_classes = len(class_to_idx)
 
     # Pre-cache de imágenes (solo la primera vez)
     if use_cache:
@@ -413,13 +767,15 @@ def get_dataloaders(
     #
     # La fórmula: weight_i = N_total / (N_clases * N_clase_i)
     # Clases con menos imágenes → peso más alto → más penalización si se equivoca.
-    n_total = len(train_df)
-    n_classes = train_df["label"].nunique()
+    n_total      = len(train_df)
     class_counts = train_df["label"].value_counts().to_dict()
-    class_weight_list = [
-        n_total / (n_classes * class_counts[IDX_TO_CLASS[i]])
-        for i in range(n_classes)
-    ]
+
+    class_weight_list = []
+    for i in range(n_classes):
+        clase     = idx_to_class[i]
+        count     = class_counts.get(clase, 1)  # default 1 para evitar division por cero
+        class_weight_list.append(n_total / (n_classes * count))
+
     class_weights_tensor = torch.tensor(class_weight_list, dtype=torch.float)
 
     split_info = {
@@ -428,12 +784,18 @@ def get_dataloaders(
         "test_df":       test_df,
         "class_counts":  class_counts,
         "class_weights": class_weights_tensor,
+        "class_to_idx":  class_to_idx,
+        "idx_to_class":  idx_to_class,
+        "n_classes":     n_classes,
+        "dataset_mode":  dataset_mode,
+        "split_mode":    split_mode,
+        "balancing_mode": balancing_mode,
     }
 
     # ── Crear Datasets ────────────────────────────────────────────────────
-    train_dataset = VidLeafDataset(train_df, transform=get_train_transform(), cache_dir=train_cache)
-    val_dataset   = VidLeafDataset(val_df,   transform=get_eval_transform(),  cache_dir=val_cache)
-    test_dataset  = VidLeafDataset(test_df,  transform=get_eval_transform(),  cache_dir=test_cache)
+    train_dataset = VidLeafDataset(train_df, class_to_idx, transform=get_train_transform(), cache_dir=train_cache)
+    val_dataset   = VidLeafDataset(val_df,   class_to_idx, transform=get_eval_transform(),  cache_dir=val_cache)
+    test_dataset  = VidLeafDataset(test_df,  class_to_idx, transform=get_eval_transform(),  cache_dir=test_cache)
 
     # pin_memory: pre-aloca memoria en la GPU. Solo funciona con CUDA.
     use_pin_memory = torch.cuda.is_available()
