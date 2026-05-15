@@ -32,6 +32,13 @@ Modelos disponibles:
      11.7M params totales, 512 features de salida.
      Es el modelo usado en el notebook Clase_VC de la materia.
 
+  3. MobileNet-V3 Small: Diseñado para inferencia en dispositivos con recursos
+     limitados (celular, edge). Muy rápido pero menos capacidad.
+     2.5M params totales, 576 features de salida.
+
+  4. ResNet50: Versión más profunda de ResNet. Más capacidad que ResNet18.
+     25.6M params totales, 2048 features de salida.
+
 Referencia del notebook Clase_VC:
     class ResNet18(nn.Module):
         def __init__(self):
@@ -57,9 +64,11 @@ class VidLeafClassifier(nn.Module):
     """
     Clasificador de hojas de vid.
 
-    Soporta dos backbones:
-    - EfficientNet-B0: más eficiente, mejor accuracy con datasets medianos
-    - ResNet18: más simple, más rápido en MPS (Apple Silicon)
+    Soporta cuatro backbones:
+    - EfficientNet-B0: mejor ratio accuracy/parámetros, ideal para datasets medianos
+    - ResNet18: clásico y rápido en MPS (Apple Silicon)
+    - MobileNet-V3: ultra liviano, para deployment en dispositivos
+    - ResNet50: más capacidad que ResNet18, para datasets más grandes
 
     Arquitectura del classifier head:
         Dropout(0.3)         ← previene overfitting desactivando 30% de neuronas
@@ -92,8 +101,15 @@ class VidLeafClassifier(nn.Module):
             self._build_efficientnet(num_classes, pretrained, freeze_backbone)
         elif model_name == "resnet18":
             self._build_resnet18(num_classes, pretrained, freeze_backbone)
+        elif model_name == "mobilenet_v3":
+            self._build_mobilenet_v3(num_classes, pretrained, freeze_backbone)
+        elif model_name == "resnet50":
+            self._build_resnet50(num_classes, pretrained, freeze_backbone)
         else:
-            raise ValueError(f"Modelo '{model_name}' no soportado. Usar 'efficientnet_b0' o 'resnet18'.")
+            raise ValueError(
+                f"Modelo '{model_name}' no soportado. "
+                f"Opciones: 'efficientnet_b0', 'resnet18', 'mobilenet_v3', 'resnet50'."
+            )
 
     def _build_efficientnet(self, num_classes, pretrained, freeze_backbone):
         """Construye backbone EfficientNet-B0 con head personalizado."""
@@ -141,6 +157,62 @@ class VidLeafClassifier(nn.Module):
             nn.ReLU(),
             nn.Dropout(p=0.2),
             nn.Linear(256, num_classes),
+        )
+
+    def _build_mobilenet_v3(self, num_classes, pretrained, freeze_backbone):
+        """
+        Construye backbone MobileNet-V3 Small con head personalizado.
+
+        MobileNet-V3 usa depthwise separable convolutions — divide la convolución
+        estándar en dos pasos más baratos computacionalmente. Resultado: 10x menos
+        operaciones que ResNet18 con accuracy comparable en datasets pequeños.
+
+        Ideal para deployment en dispositivo (celular, Raspberry Pi).
+        2.5M params totales, 576 features de salida.
+        """
+        weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
+        self.backbone = models.mobilenet_v3_small(weights=weights)
+
+        if freeze_backbone:
+            for param in self.backbone.features.parameters():
+                param.requires_grad = False
+
+        # MobileNet-V3 Small: in_features = 576
+        in_features = self.backbone.classifier[0].in_features
+        self.backbone.classifier = nn.Sequential(
+            nn.Dropout(p=0.2),
+            nn.Linear(in_features, 256),
+            nn.Hardswish(),           # activación nativa de MobileNet-V3
+            nn.Dropout(p=0.2),
+            nn.Linear(256, num_classes),
+        )
+
+    def _build_resnet50(self, num_classes, pretrained, freeze_backbone):
+        """
+        Construye backbone ResNet50 con head personalizado.
+
+        ResNet50 usa bottleneck blocks (1x1 → 3x3 → 1x1) en lugar de los
+        basic blocks de ResNet18. Más profundo, más capacidad representacional,
+        pero más lento y necesita más datos para no overfittear.
+
+        25.6M params totales, 2048 features de salida.
+        """
+        weights = models.ResNet50_Weights.IMAGENET1K_V1 if pretrained else None
+        self.backbone = models.resnet50(weights=weights)
+
+        if freeze_backbone:
+            for name, param in self.backbone.named_parameters():
+                if "layer4" not in name and "fc" not in name:
+                    param.requires_grad = False
+
+        # ResNet50: in_features = 2048
+        in_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Sequential(
+            nn.Dropout(p=0.3),
+            nn.Linear(in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(512, num_classes),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
