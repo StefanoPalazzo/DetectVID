@@ -32,11 +32,16 @@ Antes de correr:
     3. Verificar que las carpetas zenodo_* existan (correr prepare_zenodo.py antes)
 """
 
+import os
 import sys
 import gc
 import argparse
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+# Necesario en macOS con MPS — evita que torch se trabe al inicializar
+# el backend de Metal la primera vez que se importa desde otro módulo.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import torch
 
