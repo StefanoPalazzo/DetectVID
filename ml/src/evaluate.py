@@ -11,13 +11,15 @@ Genera:
 Ejecutar desde src/:
     python evaluate.py
     python evaluate.py --checkpoint ../checkpoints/best_model.pth
+    python evaluate.py --experiment-id exp01_baseline_eff
+    python evaluate.py --dataset-mode 4cls_zenodo --split-mode split_respected
 """
 
 import sys
 import json
 import argparse
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -28,7 +30,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 from sklearn.metrics import (
     accuracy_score, confusion_matrix, classification_report,
-    roc_curve, auc, precision_recall_curve, average_precision_score,
+    roc_curve, auc,
 )
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -36,8 +38,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import (
     DEVICE, BEST_MODEL_PATH, RESULTS_DIR, NUM_CLASSES,
     IDX_TO_CLASS, CLASS_DISPLAY_NAMES, BATCH_SIZE,
+    CHECKPOINTS_DIR, DATASET_MODE, SPLIT_MODE, BALANCING_MODE,
 )
-from dataset import get_dataloaders
+from dataset import get_dataloaders, get_class_mapping
 from model import load_model
 
 
@@ -52,8 +55,8 @@ def run_inference(
     """
     Corre el modelo sobre todo el test set.
     Returns:
-        y_true:  (N,)        — etiquetas reales
-        y_pred:  (N,)        — predicciones (argmax)
+        y_true:  (N,)          — etiquetas reales
+        y_pred:  (N,)          — predicciones (argmax)
         y_proba: (N, n_clases) — probabilidades softmax
     """
     model.eval()
@@ -121,7 +124,11 @@ def plot_roc_curves(
     class_names: List[str],
     save_path:   Path,
 ) -> dict:
-    """Curvas ROC One-vs-Rest para clasificación multiclase."""
+    """
+    Curvas ROC One-vs-Rest para clasificación multiclase.
+    La paleta de colores escala automáticamente con el número de clases,
+    así no explota si NUM_CLASSES pasa de 3 a 4 (o más).
+    """
     from sklearn.preprocessing import label_binarize
     n_classes = len(class_names)
 
@@ -130,7 +137,10 @@ def plot_roc_curves(
     fig, ax = plt.subplots(figsize=(8, 6))
     auc_scores = {}
 
-    colors = ["#2196F3", "#FF5722", "#4CAF50"]
+    # Paleta dinámica — tab10 soporta hasta 10 clases sin repetir colores
+    cmap   = plt.get_cmap("tab10")
+    colors = [cmap(i) for i in range(n_classes)]
+
     for i, (cls_name, color) in enumerate(zip(class_names, colors)):
         fpr, tpr, _ = roc_curve(y_bin[:, i], y_proba[:, i])
         roc_auc = auc(fpr, tpr)
@@ -189,7 +199,8 @@ def plot_training_curves(history_path: Path, save_path: Path) -> None:
     # Indicar la época con mejor val_loss
     best_epoch = int(np.argmin(history["val_loss"])) + 1
     for ax in axes:
-        ax.axvline(x=best_epoch, color="green", linestyle="--", alpha=0.7, label=f"Mejor época ({best_epoch})")
+        ax.axvline(x=best_epoch, color="green", linestyle="--", alpha=0.7,
+                   label=f"Mejor época ({best_epoch})")
 
     plt.tight_layout()
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -197,20 +208,92 @@ def plot_training_curves(history_path: Path, save_path: Path) -> None:
     print(f"  ✓ Curvas de entrenamiento guardadas en {save_path}")
 
 
+# ─── Logging a W&B (opcional) ─────────────────────────────────────────────────
+
+def _log_to_wandb(
+    wandb_run,
+    metrics:     dict,
+    y_true:      np.ndarray,
+    y_pred:      np.ndarray,
+    class_names: List[str],
+) -> None:
+    """
+    Loguea métricas y matriz de confusión a un run de W&B activo.
+    Se llama solo si wandb_run no es None. Si wandb no está instalado,
+    captura el ImportError y continúa sin crashear.
+    """
+    try:
+        import wandb
+    except ImportError:
+        print("  [W&B] wandb no está instalado — salteando logging remoto")
+        return
+
+    log_dict = {
+        "eval/accuracy": metrics["accuracy"],
+    }
+
+    # AUC por clase
+    for cls_name, auc_val in metrics["auc_scores"].items():
+        log_dict[f"eval/auc_{cls_name}"] = auc_val
+
+    # Matriz de confusión como imagen de W&B
+    try:
+        cm_image = wandb.plot.confusion_matrix(
+            probs=None,
+            y_true=y_true.tolist(),
+            preds=y_pred.tolist(),
+            class_names=class_names,
+        )
+        log_dict["eval/confusion_matrix"] = cm_image
+    except Exception as e:
+        print(f"  [W&B] No se pudo crear confusion matrix plot: {e}")
+
+    wandb_run.log(log_dict)
+    print("  ✓ Métricas logeadas a W&B")
+
+
 # ─── Evaluación principal ─────────────────────────────────────────────────────
 
-def evaluate(checkpoint_path: Path = BEST_MODEL_PATH) -> None:
+def evaluate(
+    checkpoint_path: Path = BEST_MODEL_PATH,
+    dataset_mode:    str  = DATASET_MODE,
+    split_mode:      Optional[str] = SPLIT_MODE,
+    balancing_mode:  str  = BALANCING_MODE,
+    wandb_run=None,  # referencia al run de W&B activo (opcional)
+) -> dict:
+    """
+    Evalúa el modelo sobre el test set y genera todos los reportes.
+
+    Args:
+        checkpoint_path: ruta al .pth del modelo a evaluar
+        dataset_mode:    modo de composición del dataset (ver config.py)
+        split_mode:      estrategia de split (ver config.py)
+        balancing_mode:  estrategia de balanceo (ver config.py)
+        wandb_run:       run de W&B activo para logear resultados (None = no logear)
+
+    Returns:
+        dict con accuracy, auc_scores y classification_report
+    """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*60}")
     print(f" DetectVID — Evaluación")
-    print(f" Dispositivo: {DEVICE.upper()}")
+    print(f" Dispositivo:      {DEVICE.upper()}")
+    print(f" Dataset mode:     {dataset_mode}")
+    print(f" Split mode:       {split_mode}")
+    print(f" Balancing mode:   {balancing_mode}")
+    print(f" Checkpoint:       {checkpoint_path}")
     print(f"{'='*60}\n")
 
-    # ── Datos ─────────────────────────────────────────────────────────────────
-    _, _, test_loader, _ = get_dataloaders(batch_size=BATCH_SIZE)
+    # ── Datos — se pasan los mismos parámetros que en el experimento ──────────
+    _, _, test_loader, split_info = get_dataloaders(
+        batch_size=BATCH_SIZE,
+        dataset_mode=dataset_mode,
+        split_mode=split_mode,
+        balancing_mode=balancing_mode,
+    )
 
-    # ── Detectar modelo del checkpoint ─────────────────────────────────────────
+    # ── Detectar modelo del checkpoint ───────────────────────────────────────
     checkpoint = torch.load(str(checkpoint_path), map_location=DEVICE, weights_only=False)
     model_name = "efficientnet_b0"  # default
     if isinstance(checkpoint, dict):
@@ -223,8 +306,15 @@ def evaluate(checkpoint_path: Path = BEST_MODEL_PATH) -> None:
     print("\n[Evaluate] Corriendo inferencia sobre test set...")
     y_true, y_pred, y_proba = run_inference(model, test_loader, DEVICE)
 
-    # ── Nombres para los plots ─────────────────────────────────────────────────
-    class_names = [CLASS_DISPLAY_NAMES[IDX_TO_CLASS[i]] for i in range(NUM_CLASSES)]
+    # ── Nombres de clases para los plots ──────────────────────────────────────
+    # Se obtiene el mapeo dinámico según el modo (soporta 3 y 4 clases).
+    # CLASS_DISPLAY_NAMES incluye "others", así que no explota con 4cls_zenodo.
+    _, idx_to_class_local = get_class_mapping(dataset_mode)
+    n_classes   = len(idx_to_class_local)
+    class_names = [
+        CLASS_DISPLAY_NAMES.get(idx_to_class_local[i], idx_to_class_local[i])
+        for i in range(n_classes)
+    ]
 
     # ── Métricas escalares ────────────────────────────────────────────────────
     accuracy = accuracy_score(y_true, y_pred)
@@ -256,11 +346,11 @@ def evaluate(checkpoint_path: Path = BEST_MODEL_PATH) -> None:
         save_path=RESULTS_DIR / "training_curves.png",
     )
 
-    # ── Guardar métricas completas ────────────────────────────────────────────
+    # ── Guardar métricas completas en JSON ────────────────────────────────────
     metrics = {
-        "accuracy": float(accuracy),
-        "auc_scores": {k: float(v) for k, v in auc_scores.items()},
-        "classification_report": report,
+        "accuracy":                float(accuracy),
+        "auc_scores":              {k: float(v) for k, v in auc_scores.items()},
+        "classification_report":   report,
     }
     metrics_path = RESULTS_DIR / "metrics.json"
     with open(metrics_path, "w") as f:
@@ -275,16 +365,68 @@ def evaluate(checkpoint_path: Path = BEST_MODEL_PATH) -> None:
         print(f"  AUC {cls:<25} {score:.4f}")
     print(f"{'='*60}\n")
 
+    # ── Logging a W&B (solo si hay un run activo) ─────────────────────────────
+    if wandb_run is not None:
+        _log_to_wandb(wandb_run, metrics, y_true, y_pred, class_names)
+
+    # Retornar métricas para que experiments.py o código externo las use
+    return metrics
+
 
 # ─── Entrypoint ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluar modelo DetectVID")
+
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=BEST_MODEL_PATH,
-        help="Ruta al checkpoint .pth del modelo",
+        default=None,
+        help="Ruta explícita al checkpoint .pth. Si se omite, se usa BEST_MODEL_PATH del config.",
     )
+    parser.add_argument(
+        "--experiment-id",
+        default=None,
+        help=(
+            "ID del experimento para cargar el checkpoint nombrado "
+            "(ej: exp01_baseline_eff → checkpoints/exp01_baseline_eff_best.pth). "
+            "Tiene prioridad sobre --checkpoint."
+        ),
+    )
+    parser.add_argument(
+        "--dataset-mode",
+        default=DATASET_MODE,
+        help=f"Modo de composición del dataset (default: {DATASET_MODE})",
+    )
+    parser.add_argument(
+        "--split-mode",
+        default=None,
+        help="Estrategia de split: None | split_respected | split_mixed (default: None)",
+    )
+    parser.add_argument(
+        "--balancing-mode",
+        default=BALANCING_MODE,
+        help=f"Estrategia de balanceo (default: {BALANCING_MODE})",
+    )
+
     args = parser.parse_args()
-    evaluate(checkpoint_path=args.checkpoint)
+
+    # Resolver el checkpoint a usar, en orden de prioridad:
+    # 1. --experiment-id  → checkpoints/{id}_best.pth
+    # 2. --checkpoint     → ruta explícita
+    # 3. default          → BEST_MODEL_PATH del config
+    if args.experiment_id is not None:
+        checkpoint_path = CHECKPOINTS_DIR / f"{args.experiment_id}_best.pth"
+        print(f"[Evaluate] Usando checkpoint del experimento: {checkpoint_path}")
+    elif args.checkpoint is not None:
+        checkpoint_path = args.checkpoint
+    else:
+        checkpoint_path = BEST_MODEL_PATH
+
+    evaluate(
+        checkpoint_path=checkpoint_path,
+        dataset_mode=args.dataset_mode,
+        split_mode=args.split_mode,
+        balancing_mode=args.balancing_mode,
+        wandb_run=None,  # desde CLI no hay run de W&B activo
+    )
