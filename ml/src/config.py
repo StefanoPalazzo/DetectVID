@@ -21,19 +21,72 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # Dataset original (NO se modifica — es la "fuente de verdad")
-# En local: ../datasets/  |  En Colab: se clona o monta en /content/datasets/
-DATASET_ROOT = PROJECT_ROOT.parent / "datasets"
+# IMPORTANTE: la carpeta se llama "Datasets" con D mayúscula
+# En local: ../Datasets/  |  En Colab: se clona o monta en /content/Datasets/
+DATASET_ROOT = PROJECT_ROOT.parent / "Datasets"
 
-# Cache de imágenes pre-procesadas (dentro del proyecto, no toca ../datasets)
+# Cache de imágenes pre-procesadas (dentro del proyecto, no toca ../Datasets)
 # Primera ejecución: lee las imágenes originales, las redimensiona a 224x224,
 # las guarda como tensores .pt. Ejecuciones siguientes: carga directo → ~3x más rápido.
 CACHE_DIR = PROJECT_ROOT / "data" / "cache"
 
-# Subdirectorios por clase (las 3 enfermedades/estados de la hoja de vid)
+# ─── W&B (Weights & Biases) ───────────────────────────────────────────────────
+#
+# Sistema de tracking de experimentos. Registra métricas, hiperparámetros
+# y artifacts de cada run en la nube.
+#
+# Configuración:
+#   1. Instalar: pip install wandb
+#   2. Autenticarse: wandb login  (solo la primera vez)
+#   3. WANDB_ENTITY: tu usuario de W&B (None = usa el default configurado)
+
+WANDB_PROJECT = "detectvid"
+WANDB_ENTITY  = None   # Completar con tu usuario si querés especificarlo explícitamente
+
+# ─── Dimensiones de experimento ───────────────────────────────────────────────
+#
+# Estas variables controlan QUÉ experimento se corre. Se sobreescriben
+# desde experiments.py para cada run. Los defaults acá son el baseline.
+#
+# DATASET_MODE: qué clases/fuentes incluir
+#   "3cls_no_zenodo"  → solo originales (healthy, oidio, peronospora). Baseline.
+#   "3cls_zenodo"     → originales + zenodo, 3 clases
+#   "4cls_zenodo"     → originales + zenodo, 4 clases (agrega "others")
+#
+# SPLIT_MODE: cómo manejar los splits del zenodo
+#   None              → split 70/15/15 sobre todo el pool (para 3cls_no_zenodo)
+#   "split_respected" → respeta la división train/val que viene del zenodo
+#   "split_mixed"     → mezcla train+val del zenodo y hace split 70/15/15 aleatorio
+#
+# BALANCING_MODE: cómo manejar el desbalance de clases
+#   "weighted_full"   → todas las imágenes, con class_weights en CrossEntropyLoss
+#   "undersampled"    → submuestrea healthy al nivel de la clase minoritaria
+
+DATASET_MODE   = "3cls_no_zenodo"
+SPLIT_MODE     = None
+BALANCING_MODE = "weighted_full"
+
+# ─── Subdirectorios por clase ─────────────────────────────────────────────────
+#
+# Incluye tanto los originales como los del zenodo (preparados por prepare_zenodo.py).
+# Las rutas del zenodo se usan según DATASET_MODE y SPLIT_MODE.
+
 CLASS_DIRS = {
+    # Originales
     "healthy":     DATASET_ROOT / "healthy",
     "oidio":       DATASET_ROOT / "oidio",
     "peronospora": DATASET_ROOT / "peronospora",
+    "others":      DATASET_ROOT / "otros",
+
+    # Zenodo — vive dentro de cada carpeta de clase (sin trato especial)
+    "zenodo_healthy_train":      DATASET_ROOT / "healthy"      / "zenodo_healthy" / "zenodo_healthy_train",
+    "zenodo_healthy_val":        DATASET_ROOT / "healthy"      / "zenodo_healthy" / "zenodo_healthy_val",
+    "zenodo_oidio_train":        DATASET_ROOT / "oidio"        / "zenodo_oidio"   / "zenodo_oidio_train",
+    "zenodo_oidio_val":          DATASET_ROOT / "oidio"        / "zenodo_oidio"   / "zenodo_oidio_val",
+    "zenodo_peronospora_train":  DATASET_ROOT / "peronospora"  / "zenodo_peronospora" / "zenodo_peronospora_train",
+    "zenodo_peronospora_val":    DATASET_ROOT / "peronospora"  / "zenodo_peronospora" / "zenodo_peronospora_val",
+    "zenodo_others_train":       DATASET_ROOT / "otros"        / "zenodo_others"  / "zenodo_others_train",
+    "zenodo_others_val":         DATASET_ROOT / "otros"        / "zenodo_others"  / "zenodo_others_val",
 }
 
 # ─── Mapeo de clases ─────────────────────────────────────────────────────────
@@ -41,13 +94,25 @@ CLASS_DIRS = {
 # El mapeo clase → índice numérico es esencial para que el modelo trabaje
 # con tensores de enteros en vez de strings. El orden es FIJO para que los
 # checkpoints sean reproducibles entre ejecuciones.
+#
+# Para 4 clases se agrega "others" al final (índice 3), así los índices
+# 0-2 son compatibles con los modelos de 3 clases.
 
-CLASS_TO_IDX = {
+CLASS_TO_IDX_3 = {
     "healthy":     0,
     "oidio":       1,
     "peronospora": 2,
 }
 
+CLASS_TO_IDX_4 = {
+    "healthy":     0,
+    "oidio":       1,
+    "peronospora": 2,
+    "others":      3,
+}
+
+# Se asigna dinámicamente según DATASET_MODE (ver abajo)
+CLASS_TO_IDX = CLASS_TO_IDX_3 if DATASET_MODE != "4cls_zenodo" else CLASS_TO_IDX_4
 IDX_TO_CLASS = {v: k for k, v in CLASS_TO_IDX.items()}
 
 # Nombre humano para cada clase (para reportes, plots y UI)
@@ -55,7 +120,15 @@ CLASS_DISPLAY_NAMES = {
     "healthy":     "Sana",
     "oidio":       "Oídio (Powdery Mildew)",
     "peronospora": "Peronospora (Downy Mildew)",
+    "others":      "Otras enfermedades",
 }
+
+# ─── Número de clases ─────────────────────────────────────────────────────────
+#
+# Se calcula dinámicamente según DATASET_MODE para que model.py y train.py
+# no tengan que importar lógica del dataset.
+
+NUM_CLASSES = 4 if DATASET_MODE == "4cls_zenodo" else 3
 
 # ─── Splits ──────────────────────────────────────────────────────────────────
 #
@@ -79,12 +152,12 @@ RANDOM_SEED = 42
 # ─── Modelo ──────────────────────────────────────────────────────────────────
 #
 # Transfer Learning: usamos un modelo PRE-ENTRENADO en ImageNet (1.2M imágenes,
-# 1000 clases) y lo adaptamos a nuestro problema (3 clases de hojas de vid).
+# 1000 clases) y lo adaptamos a nuestro problema (3-4 clases de hojas de vid).
 #
 # ¿Por qué funciona? Las capas iniciales de una CNN aprenden patrones universales
 # (bordes, texturas, formas) que son útiles para CUALQUIER tarea de clasificación
 # de imágenes. Solo necesitamos re-entrenar las capas finales para que aprendan
-# a distinguir nuestras 3 clases específicas.
+# a distinguir nuestras clases específicas.
 #
 # Opciones de modelo:
 #   "efficientnet_b0" → Mejor accuracy/parámetro. 5.3M params. Default.
@@ -94,7 +167,6 @@ RANDOM_SEED = 42
 
 MODEL_NAME       = "efficientnet_b0"    # Cambiar a "resnet18" si querés más velocidad
 PRETRAINED       = True                  # Usar pesos de ImageNet (transfer learning)
-NUM_CLASSES      = 3                     # healthy, oidio, peronospora
 FREEZE_BACKBONE  = False                 # False = fine-tuning completo (re-entrena todo)
                                          # True  = feature extraction (solo entrena el head)
 
@@ -129,7 +201,7 @@ IMAGENET_STD  = [0.229, 0.224, 0.225]
 # Regla de oro: fine-tuning → lr 10-100x menor que training from scratch.
 
 BATCH_SIZE      = 64
-NUM_EPOCHS      = 30
+NUM_EPOCHS      = 15
 LEARNING_RATE   = 1e-4
 WEIGHT_DECAY    = 1e-4     # Regularización L2 — penaliza pesos grandes para evitar overfitting
 LABEL_SMOOTHING = 0.1      # Suaviza las etiquetas (0→0.033, 1→0.967). Reduce overconfidence.
