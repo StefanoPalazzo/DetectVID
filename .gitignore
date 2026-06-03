@@ -61,3 +61,6 @@ frontend/.vite/
 .atl/
 Fuentes.rtf
 Recomendaciones.rtfd/
+
+wandb/
+*.csv
