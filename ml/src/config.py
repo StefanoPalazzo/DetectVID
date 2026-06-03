@@ -28,7 +28,10 @@ DATASET_ROOT = PROJECT_ROOT.parent / "Datasets"
 # Cache de imágenes pre-procesadas (dentro del proyecto, no toca ../Datasets)
 # Primera ejecución: lee las imágenes originales, las redimensiona a 224x224,
 # las guarda como tensores .pt. Ejecuciones siguientes: carga directo → ~3x más rápido.
-CACHE_DIR = PROJECT_ROOT / "data" / "cache"
+# Cache fuera de iCloud — evita que iCloud sincronice tensores .pt mientras se escriben
+# (iCloud sincronizando = 10x más lento en escritura). /var/folders es temp del sistema,
+# no toca iCloud y sobrevive reinicios de sesión (pero no de máquina).
+CACHE_DIR = PROJECT_ROOT / "cache"
 
 # ─── W&B (Weights & Biases) ───────────────────────────────────────────────────
 #
@@ -62,8 +65,8 @@ WANDB_ENTITY  = None   # Completar con tu usuario si querés especificarlo expl�
 #   "weighted_full"   → todas las imágenes, con class_weights en CrossEntropyLoss
 #   "undersampled"    → submuestrea healthy al nivel de la clase minoritaria
 
-DATASET_MODE   = "3cls_no_zenodo"
-SPLIT_MODE     = None
+DATASET_MODE   = "4cls_zenodo"
+SPLIT_MODE     = "split_respected"
 BALANCING_MODE = "weighted_full"
 
 # ─── Subdirectorios por clase ─────────────────────────────────────────────────
@@ -245,13 +248,10 @@ LR_SCHEDULER_MIN_LR   = 1e-7  # Piso mínimo del LR
 AUGMENTATION_CONFIG = {
     "horizontal_flip_prob": 0.5,
     "vertical_flip_prob":   0.3,
-    "color_jitter": {
-        "brightness": 0.15,
-        "contrast":   0.15,
-        "saturation": 0.1,
-        "hue":        0.03,
-    },
+    "local_sun_glare_prob": 0.5,
     "random_erasing_prob": 0.1,
+    "random_rotation_degrees": 45,
+    "random_resized_crop_scale": (0.7, 1.0),
 }
 
 # ─── Optimización de hardware ────────────────────────────────────────────────
@@ -268,8 +268,9 @@ USE_COMPILE = False
 
 # ─── Checkpoints ─────────────────────────────────────────────────────────────
 
+EXPERIMENT_ID     = "exp27_4cls_aug_quirurgico"
 CHECKPOINTS_DIR   = PROJECT_ROOT / "checkpoints"
-BEST_MODEL_PATH   = CHECKPOINTS_DIR / "best_model.pth"
+BEST_MODEL_PATH   = CHECKPOINTS_DIR / f"{EXPERIMENT_ID}_best.pth"
 LAST_MODEL_PATH   = CHECKPOINTS_DIR / "last_model.pth"
 
 # ─── Resultados ──────────────────────────────────────────────────────────────
@@ -277,16 +278,6 @@ LAST_MODEL_PATH   = CHECKPOINTS_DIR / "last_model.pth"
 RESULTS_DIR       = PROJECT_ROOT / "results"
 
 # ─── Dispositivo ─────────────────────────────────────────────────────────────
-#
-# Detección automática del mejor dispositivo disponible:
-# 1. CUDA (GPU NVIDIA) → más rápido, ideal en Colab
-# 2. MPS (Apple Silicon GPU) → tu MacBook Pro M4 Pro
-# 3. CPU → fallback, funciona pero es 5-10x más lento
-#
-# ¿Qué es MPS?
-# Metal Performance Shaders — el framework de Apple para cómputo en GPU.
-# PyTorch 2.x lo soporta nativamente. No es tan rápido como CUDA pero
-# es MUCHO mejor que CPU puro.
 
 import torch
 DEVICE = (
@@ -294,3 +285,7 @@ DEVICE = (
     "mps"   if torch.backends.mps.is_available() else
     "cpu"
 )
+
+# ─── Hiperparámetros de Entrenamiento ────────────────────────────────────────
+
+MAX_EPOCHS   = 35

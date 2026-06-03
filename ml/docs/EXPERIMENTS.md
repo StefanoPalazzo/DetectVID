@@ -81,6 +81,23 @@ Hay dos estrategias para corregirlo:
 | exp11 | ResNet18 | 4 | Undersampling | ¿ResNet18 undersampled mejora? |
 | exp12 | (ganador) | (ganador) | (ganador) | ¿El ganador escala con más epochs? |
 
+### Fase 2: Modelos Clean (sin sesgos de laboratorio)
+Mismos experimentos de la Fase 1, pero entrenados sobre un dataset depurado que excluye las imágenes con fondos planos o lisos, evitando el *shortcut learning*.
+| ID | Modelo | Clases | Balanceo | Equivalente original |
+|---|---|---|---|---|
+| exp13_clean | EfficientNet-B0 | 3 | Weighted | exp01 |
+| exp14_clean | ResNet18 | 3 | Weighted | exp02 |
+| exp15_clean | MobileNet-V3 | 3 | Weighted | exp07 |
+| exp16_clean | ResNet50 | 3 | Weighted | exp09 |
+| exp17_clean | EfficientNet-B0 | 3 | Undersampling | exp05 |
+| exp18_clean | EfficientNet-B0 | 4 | Weighted | exp03 |
+| exp19_clean | ResNet18 | 4 | Weighted | exp04 |
+| exp20_clean | MobileNet-V3 | 4 | Weighted | exp08 |
+| exp21_clean | ResNet50 | 4 | Weighted | exp10 |
+| exp22_clean | EfficientNet-B0 | 4 | Undersampling | exp06 |
+| exp23_clean | ResNet18 | 4 | Undersampling | exp11 |
+| exp24_clean | (ganador) | 4 | Weighted | exp12 |
+
 ---
 
 ## Los tres ejes de comparación para la tesis

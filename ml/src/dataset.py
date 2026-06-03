@@ -570,27 +570,79 @@ def ensure_cache(
 
 # ─── Transformaciones ────────────────────────────────────────────────────────
 
+class LocalSunGlare(object):
+    """
+    Simula un reflejo de sol intenso en un parche aleatorio de la imagen.
+    Evita alterar el color global para no perder características diagnósticas
+    como el amarillo sutil de la Peronospora.
+    """
+    def __init__(self, p=0.5, scale=(0.05, 0.2), brightness_add=0.4):
+        self.p = p
+        self.scale = scale
+        self.brightness_add = brightness_add
+
+    def __call__(self, img):
+        # img es un tensor [C, H, W] después de ToTensor()
+        # ¡OJO! En nuestro pipeline de get_train_transform(), las imágenes vienen como PIL Images
+        # porque ToTensor se aplica más tarde si no usamos el cache de tensores.
+        # Pero si leemos desde el cache, img ES un tensor.
+        import math
+        
+        if torch.rand(1).item() > self.p:
+            return img
+            
+        if isinstance(img, torch.Tensor):
+            c, h, w = img.shape
+            area = h * w
+            target_area = torch.empty(1).uniform_(self.scale[0], self.scale[1]).item() * area
+            side = int(math.sqrt(target_area))
+            
+            if side < h and side < w:
+                y1 = torch.randint(0, h - side + 1, size=(1,)).item()
+                x1 = torch.randint(0, w - side + 1, size=(1,)).item()
+                
+                # Para evitar problemas de in-place en tensores, creamos un clon
+                img = img.clone()
+                img[:, y1:y1+side, x1:x1+side] = torch.clamp(img[:, y1:y1+side, x1:x1+side] + self.brightness_add, 0, 1)
+                
+            return img
+        else:
+            # Si es PIL Image
+            from PIL import ImageEnhance
+            w, h = img.size
+            area = h * w
+            target_area = torch.empty(1).uniform_(self.scale[0], self.scale[1]).item() * area
+            side = int(math.sqrt(target_area))
+            
+            if side < h and side < w:
+                y1 = torch.randint(0, h - side + 1, size=(1,)).item()
+                x1 = torch.randint(0, w - side + 1, size=(1,)).item()
+                
+                # Recortar el parche, aumentar brillo y pegarlo
+                patch = img.crop((x1, y1, x1+side, y1+side))
+                enhancer = ImageEnhance.Brightness(patch)
+                patch = enhancer.enhance(1.0 + self.brightness_add * 2) # factor > 1 aumenta brillo
+                
+                # Pegar el parche
+                img.paste(patch, (x1, y1))
+                
+            return img
+
+
 def get_train_transform() -> transforms.Compose:
     """
-    Augmentation LIVIANO para training.
+    Augmentation QUIRÚRGICO para training (Exp 27).
 
-    ¿Por qué liviano y no pesado?
-    En MPS (Apple Silicon) los transforms corren en CPU. Cada milisegundo
-    extra por imagen se multiplica por 7000+ imágenes por época.
-    Medimos: transforms pesados = 123ms/batch vs livianos = 45ms/batch.
-
-    Transforms elegidos (todos ~0ms overhead):
-    - RandomHorizontalFlip: espeja horizontalmente con p=0.5
-    - RandomVerticalFlip: espeja verticalmente con p=0.3
-    - ColorJitter: variación leve de brillo/contraste (simula luz solar)
-    - Normalize: ajusta a estadísticas ImageNet (OBLIGATORIO)
-    - RandomErasing: borra un rectángulo random (simula oclusión, p=0.1)
+    - RandomResizedCrop: suavizado a 0.7 para no perder bordes.
+    - LocalSunGlare: reflejo de sol localizado, sin destrozar el color general.
     """
     cfg = AUGMENTATION_CONFIG
     return transforms.Compose([
+        transforms.RandomResizedCrop(INPUT_SIZE, scale=cfg.get("random_resized_crop_scale", (0.7, 1.0))),
+        transforms.RandomRotation(cfg.get("random_rotation_degrees", 45)),
         transforms.RandomHorizontalFlip(p=cfg["horizontal_flip_prob"]),
         transforms.RandomVerticalFlip(p=cfg["vertical_flip_prob"]),
-        transforms.ColorJitter(**cfg["color_jitter"]),
+        LocalSunGlare(p=cfg.get("local_sun_glare_prob", 0.5)),
         transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         transforms.RandomErasing(p=cfg["random_erasing_prob"]),
     ])
@@ -681,20 +733,21 @@ class VidLeafDataset(Dataset):
 
 # ─── DataLoaders ─────────────────────────────────────────────────────────────
 
-def _resolve_num_workers() -> int:
+def _resolve_num_workers(use_cache: bool = False) -> int:
     """
-    Determina num_workers según el dispositivo.
+    Determina num_workers según el dispositivo y si se usa cache.
 
-    MPS (Apple Silicon): DEBE ser 0.
-    ¿Por qué? PyTorch fork() crea workers que intentan acceder al mismo
-    MPS command buffer → deadlock. No es un bug, es una limitación
-    arquitectural de Metal (single-process command queue).
+    MPS con cache: usar 4 workers con multiprocessing_context="spawn".
+    MPS sin cache: 0 workers — con PIL directo, spawn agrega overhead y
+    los workers compiten por disco → más lento que single-thread.
 
     CUDA (Colab T4): 2-4 workers — paraleliza I/O de disco con cómputo GPU.
     CPU: 0 — sin GPU que saturar, workers solo agregan overhead.
     """
     if torch.cuda.is_available():
         return min(4, os.cpu_count() or 4)
+    if torch.backends.mps.is_available():
+        return 4 if use_cache else 0
     return 0
 
 
@@ -732,7 +785,7 @@ def get_dataloaders(
         train_loader, val_loader, test_loader, split_info
     """
     if num_workers is None:
-        num_workers = _resolve_num_workers()
+        num_workers = _resolve_num_workers(use_cache=use_cache)
     print(f"[Dataset] num_workers={num_workers} (autodetectado)")
 
     # ── Construir DataFrame según el modo ─────────────────────────────────
@@ -800,6 +853,12 @@ def get_dataloaders(
     # pin_memory: pre-aloca memoria en la GPU. Solo funciona con CUDA.
     use_pin_memory = torch.cuda.is_available()
 
+    # multiprocessing_context: en MPS hay que usar "spawn" (no "fork").
+    # fork() hereda el estado de Metal → deadlock en el command buffer.
+    # spawn arranca cada worker desde cero → seguro y paralelo.
+    # Con num_workers=0 este parámetro se ignora.
+    mp_context = "spawn" if (torch.backends.mps.is_available() and num_workers > 0) else None
+
     # ── Crear DataLoaders ─────────────────────────────────────────────────
     # shuffle=True en train → el modelo ve los datos en orden diferente cada época
     # shuffle=False en val/test → resultados reproducibles
@@ -810,6 +869,7 @@ def get_dataloaders(
         num_workers=num_workers,
         pin_memory=use_pin_memory,
         drop_last=True,  # descarta el último batch incompleto (evita batch de 1-2 imgs)
+        multiprocessing_context=mp_context,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -817,6 +877,7 @@ def get_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=use_pin_memory,
+        multiprocessing_context=mp_context,
     )
     test_loader = DataLoader(
         test_dataset,
@@ -824,6 +885,7 @@ def get_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=use_pin_memory,
+        multiprocessing_context=mp_context,
     )
 
     print(f"[Dataset] Batches train={len(train_loader)} | val={len(val_loader)} | test={len(test_loader)}")

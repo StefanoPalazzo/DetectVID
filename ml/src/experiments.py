@@ -88,31 +88,47 @@ from train import train
 EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
     # ── 3 clases — Weighted loss ───────────────────────────────────────────
     # Pregunta: ¿qué arquitectura generaliza mejor con 3 clases?
-    ("exp01_3cls_weighted_eff",     "efficientnet_b0", "3cls_zenodo", "split_mixed", "weighted_full"),  # BASELINE
-    ("exp02_3cls_weighted_res18",   "resnet18",        "3cls_zenodo", "split_mixed", "weighted_full"),
-    ("exp07_3cls_weighted_mob",     "mobilenet_v3",    "3cls_zenodo", "split_mixed", "weighted_full"),
-    ("exp09_3cls_weighted_res50",   "resnet50",        "3cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp01_3cls_weighted_eff",     "efficientnet_b0", "3cls_zenodo", "split_mixed", "weighted_full"),  # BASELINE
+    # ("exp02_3cls_weighted_res18",   "resnet18",        "3cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp07_3cls_weighted_mob",     "mobilenet_v3",    "3cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp09_3cls_weighted_res50",   "resnet50",        "3cls_zenodo", "split_mixed", "weighted_full"),
 
     # ── 3 clases — Undersampling ───────────────────────────────────────────
     # Pregunta: ¿undersampling mejora respecto a weighted en 3 clases?
-    ("exp05_3cls_under_eff",        "efficientnet_b0", "3cls_zenodo", "split_mixed", "undersampled"),
+    # ("exp05_3cls_under_eff",        "efficientnet_b0", "3cls_zenodo", "split_mixed", "undersampled"),
 
     # ── 4 clases — Weighted loss ───────────────────────────────────────────
     # Pregunta: ¿agregar "others" mejora la precisión en campo?
-    ("exp03_4cls_weighted_eff",     "efficientnet_b0", "4cls_zenodo", "split_mixed", "weighted_full"),
-    ("exp04_4cls_weighted_res18",   "resnet18",        "4cls_zenodo", "split_mixed", "weighted_full"),
-    ("exp08_4cls_weighted_mob",     "mobilenet_v3",    "4cls_zenodo", "split_mixed", "weighted_full"),
-    ("exp10_4cls_weighted_res50",   "resnet50",        "4cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp03_4cls_weighted_eff",     "efficientnet_b0", "4cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp04_4cls_weighted_res18",   "resnet18",        "4cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp08_4cls_weighted_mob",     "mobilenet_v3",    "4cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp10_4cls_weighted_res50",   "resnet50",        "4cls_zenodo", "split_mixed", "weighted_full"),
 
     # ── 4 clases — Undersampling ───────────────────────────────────────────
     # Pregunta: ¿undersampling mejora respecto a weighted en 4 clases?
-    ("exp06_4cls_under_eff",        "efficientnet_b0", "4cls_zenodo", "split_mixed", "undersampled"),
-    ("exp11_4cls_under_res18",      "resnet18",        "4cls_zenodo", "split_mixed", "undersampled"),
+    # ("exp06_4cls_under_eff",        "efficientnet_b0", "4cls_zenodo", "split_mixed", "undersampled"),
+    # ("exp11_4cls_under_res18",      "resnet18",        "4cls_zenodo", "split_mixed", "undersampled"),
 
     # ── Mejor configuración: re-run con más epochs ─────────────────────────
     # Pregunta: ¿el ganador escala con más entrenamiento?
     # (completar experiment_id con el ganador una vez vistos los resultados)
-    ("exp12_best_extended",         "efficientnet_b0", "4cls_zenodo", "split_mixed", "weighted_full"),
+    # ("exp12_best_extended",         "efficientnet_b0", "4cls_zenodo", "split_mixed", "weighted_full"),
+
+    # ── Fase 2: Modelos Clean (Sin fondos planos) ─────────────────────────
+    # Pregunta: ¿Cómo se comportan los modelos ahora que no pueden hacer trampa visual?
+    ("exp13_3cls_weighted_eff_clean",     "efficientnet_b0", "3cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp14_3cls_weighted_res18_clean",   "resnet18",        "3cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp15_3cls_weighted_mob_clean",     "mobilenet_v3",    "3cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp16_3cls_weighted_res50_clean",   "resnet50",        "3cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp17_3cls_under_eff_clean",        "efficientnet_b0", "3cls_zenodo", "split_mixed", "undersampled"),
+    ("exp18_4cls_weighted_eff_clean",     "efficientnet_b0", "4cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp19_4cls_weighted_res18_clean",   "resnet18",        "4cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp20_4cls_weighted_mob_clean",     "mobilenet_v3",    "4cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp21_4cls_weighted_res50_clean",   "resnet50",        "4cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp22_4cls_under_eff_clean",        "efficientnet_b0", "4cls_zenodo", "split_mixed", "undersampled"),
+    ("exp23_4cls_under_res18_clean",      "resnet18",        "4cls_zenodo", "split_mixed", "undersampled"),
+    ("exp24_best_extended_clean",         "efficientnet_b0", "4cls_zenodo", "split_mixed", "weighted_full"),
+    ("exp25_4cls_agresivo_res18_clean",   "resnet18",        "4cls_zenodo", "split_mixed", "weighted_full"),
 ]
 
 
