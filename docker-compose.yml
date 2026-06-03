@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: detectvid_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-detectvid2026}
+      POSTGRES_DB: ${POSTGRES_DB:-detectvid}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - detectvid_network
+
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: detectvid_ml
+    restart: always
+    expose:
+      - "8000"
+    volumes:
+      # Montamos los modelos para no tener que reconstruir la imagen si cambian
+      - ./ml/checkpoints:/app/checkpoints
+    networks:
+      - detectvid_network
+    environment:
+      - ENVIRONMENT=production
+      - OMP_NUM_THREADS=4
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: detectvid_backend
+    restart: always
+    expose:
+      - "3001"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-detectvid2026}@db:5432/${POSTGRES_DB:-detectvid}?schema=public
+      - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_detectvid}
+      - ML_API_URL=http://ml:8000
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - FRONTEND_URLS=${FRONTEND_URLS:-http://localhost}
+    depends_on:
+      - db
+      - ml
+    networks:
+      - detectvid_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: detectvid_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - detectvid_network
+
+networks:
+  detectvid_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
