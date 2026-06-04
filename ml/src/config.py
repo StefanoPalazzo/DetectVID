@@ -286,6 +286,49 @@ DEVICE = (
     "cpu"
 )
 
+# ─── OVERRIDES NOCTURNOS ─────────────────────────────────────────────────────
+import os
+override = os.environ.get("OVERRIDE_EXP", None)
+if override == "exp28":
+    EXPERIMENT_ID = "exp28_4cls_agresivo_mild_color_clean"
+    NUM_EPOCHS = 50
+    AUGMENTATION_CONFIG = {
+        "horizontal_flip_prob": 0.5,
+        "vertical_flip_prob": 0.3,
+        "color_jitter": {"brightness": 0.1, "contrast": 0.1, "saturation": 0.1, "hue": 0.02},
+        "random_resized_crop_scale": (0.4, 1.0),
+        "random_erasing_prob": 0.1,
+    }
+elif override == "exp29":
+    EXPERIMENT_ID = "exp29_4cls_agresivo_local_sun_clean"
+    NUM_EPOCHS = 50
+    AUGMENTATION_CONFIG = {
+        "horizontal_flip_prob": 0.5,
+        "vertical_flip_prob": 0.3,
+        "local_sun_glare_prob": 0.5,
+        "random_resized_crop_scale": (0.4, 1.0),
+        "random_erasing_prob": 0.1,
+    }
+elif override == "exp30":
+    EXPERIMENT_ID = "exp30_4cls_agresivo_blur_clean"
+    NUM_EPOCHS = 50
+    AUGMENTATION_CONFIG = {
+        "horizontal_flip_prob": 0.5,
+        "vertical_flip_prob": 0.3,
+        "random_resized_crop_scale": (0.5, 1.0),
+        "gaussian_blur_prob": 0.5,
+    }
+elif override == "exp31":
+    EXPERIMENT_ID = "exp31_4cls_agresivo_no_color_clean"
+    NUM_EPOCHS = 35
+    AUGMENTATION_CONFIG = {
+        "horizontal_flip_prob": 0.5,
+        "vertical_flip_prob": 0.3,
+        "random_resized_crop_scale": (0.5, 1.0),
+    }
+
+BEST_MODEL_PATH   = CHECKPOINTS_DIR / f"{EXPERIMENT_ID}_best.pth"
+
 # ─── Hiperparámetros de Entrenamiento ────────────────────────────────────────
 
 MAX_EPOCHS   = 35

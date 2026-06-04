@@ -631,21 +631,35 @@ class LocalSunGlare(object):
 
 def get_train_transform() -> transforms.Compose:
     """
-    Augmentation QUIRÚRGICO para training (Exp 27).
-
-    - RandomResizedCrop: suavizado a 0.7 para no perder bordes.
-    - LocalSunGlare: reflejo de sol localizado, sin destrozar el color general.
+    Augmentation dinámico para training, según la configuración en config.py.
     """
     cfg = AUGMENTATION_CONFIG
-    return transforms.Compose([
+    
+    t_list = [
         transforms.RandomResizedCrop(INPUT_SIZE, scale=cfg.get("random_resized_crop_scale", (0.7, 1.0))),
-        transforms.RandomRotation(cfg.get("random_rotation_degrees", 45)),
-        transforms.RandomHorizontalFlip(p=cfg["horizontal_flip_prob"]),
-        transforms.RandomVerticalFlip(p=cfg["vertical_flip_prob"]),
-        LocalSunGlare(p=cfg.get("local_sun_glare_prob", 0.5)),
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-        transforms.RandomErasing(p=cfg["random_erasing_prob"]),
-    ])
+    ]
+    
+    if "random_rotation_degrees" in cfg and cfg["random_rotation_degrees"] > 0:
+        t_list.append(transforms.RandomRotation(cfg["random_rotation_degrees"]))
+        
+    t_list.append(transforms.RandomHorizontalFlip(p=cfg.get("horizontal_flip_prob", 0.5)))
+    t_list.append(transforms.RandomVerticalFlip(p=cfg.get("vertical_flip_prob", 0.3)))
+    
+    if "color_jitter" in cfg:
+        t_list.append(transforms.ColorJitter(**cfg["color_jitter"]))
+        
+    if "local_sun_glare_prob" in cfg and cfg["local_sun_glare_prob"] > 0:
+        t_list.append(LocalSunGlare(p=cfg["local_sun_glare_prob"]))
+        
+    if "gaussian_blur_prob" in cfg and cfg["gaussian_blur_prob"] > 0:
+        t_list.append(transforms.RandomApply([transforms.GaussianBlur(kernel_size=5, sigma=(0.5, 2.0))], p=cfg["gaussian_blur_prob"]))
+        
+    t_list.append(transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD))
+    
+    if "random_erasing_prob" in cfg and cfg["random_erasing_prob"] > 0:
+        t_list.append(transforms.RandomErasing(p=cfg["random_erasing_prob"]))
+        
+    return transforms.Compose(t_list)
 
 
 def get_eval_transform() -> transforms.Compose:
