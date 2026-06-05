@@ -702,9 +702,17 @@ def train(
 # ─── Entrypoint ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import os
+    from config import EXPERIMENT_ID
+    
+    # Si hay un override, usamos el nombre de experimento de config.py
+    # Si no, caemos en el default "manual_run"
+    override = os.environ.get("OVERRIDE_EXP", None)
+    exp_id = EXPERIMENT_ID if override else "manual_run"
+
     # Compatibilidad hacia atrás: python src/train.py arranca un run manual
     # con los parámetros del config. W&B es opcional — si no está configurado, sigue.
     history = train(
-        experiment_id="manual_run",
+        experiment_id=exp_id,
         wandb_enabled=True,  # intenta conectar pero no falla si no puede
     )
