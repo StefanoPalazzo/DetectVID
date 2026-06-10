@@ -334,7 +334,7 @@ def train(
     set_seed()
 
     # ── Calcular NUM_CLASSES según el modo ─────────────────────────────────
-    num_classes = 4 if dataset_mode == "4cls_zenodo" else 3
+    num_classes = 4 if dataset_mode.startswith("4cls") else 3
 
     # ── Inicializar W&B ────────────────────────────────────────────────────
     # Si wandb no está disponible o no está configurado, continuamos sin él.

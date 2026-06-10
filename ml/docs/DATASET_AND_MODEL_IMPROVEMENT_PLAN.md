@@ -67,3 +67,13 @@ Primary metrics:
 - Oidio/peronospora recall separately.
 - `others` false acceptance rate.
 - Uncertain rate and accepted-only accuracy.
+
+## Implementation status update
+
+This plan is now partially implemented in code:
+
+- `4cls_closeup` dataset mode is available and scans only `Datasets/<class>/closeup/<source>/`.
+- `not_suitable/` and `IGNORED_flat_backgrounds/` are excluded from training scans.
+- `src/experiments.py --suite closeup` exposes the four close-up experiments without running them by default.
+- `ml/scripts/import_pascal_voc_dataset.py` can import Pascal/VOC XML datasets such as HERMOS after the zip is fully available.
+- See `ml/docs/DATASET_CURATION_GUIDE.md` for exact folder placement and commands.

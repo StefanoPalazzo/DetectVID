@@ -47,11 +47,24 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import config as config_module
+import dataset as dataset_module
 from config import (
     BATCH_SIZE, NUM_EPOCHS, LEARNING_RATE, DEVICE,
     WANDB_PROJECT,
 )
 from train import train
+
+
+QUALITY_AUG_CONFIG = {
+    "horizontal_flip_prob": 0.5,
+    "vertical_flip_prob": 0.3,
+    "color_jitter": {"brightness": 0.12, "contrast": 0.12, "saturation": 0.08, "hue": 0.015},
+    "local_sun_glare_prob": 0.25,
+    "random_resized_crop_scale": (0.65, 1.0),
+    "gaussian_blur_prob": 0.15,
+    "random_erasing_prob": 0.08,
+}
 
 
 # ─── Definición de los 12 experimentos ───────────────────────────────────────
@@ -132,6 +145,29 @@ EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
 ]
 
 
+# ─── Experimentos preparados para datasets close-up curados ──────────────────
+#
+# No se ejecutan por defecto porque requieren que el usuario primero separe
+# imágenes cercanas/lejos bajo Datasets/<clase>/closeup/<fuente>/.
+
+CLOSEUP_EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
+    ("4cls_closeup_res18_weighted",       "resnet18",        "4cls_closeup", "split_mixed", "weighted_full"),
+    ("4cls_closeup_eff_weighted",         "efficientnet_b0", "4cls_closeup", "split_mixed", "weighted_full"),
+    ("4cls_closeup_res18_quality_aug",    "resnet18",        "4cls_closeup", "split_mixed", "weighted_full"),
+    ("4cls_closeup_eff_quality_aug",      "efficientnet_b0", "4cls_closeup", "split_mixed", "weighted_full"),
+]
+
+
+def _experiments_for_suite(suite: str) -> List[Tuple[str, str, str, Optional[str], str]]:
+    if suite == "current":
+        return EXPERIMENTS
+    if suite == "closeup":
+        return CLOSEUP_EXPERIMENTS
+    if suite == "all":
+        return EXPERIMENTS + CLOSEUP_EXPERIMENTS
+    raise ValueError(f"Suite no soportada: {suite}")
+
+
 # ─── Limpieza de memoria GPU entre experimentos ────────────────────────────────
 
 def _limpiar_memoria_gpu() -> None:
@@ -188,7 +224,15 @@ def correr_experimento(
         print("  [DRY RUN] No se ejecuta nada")
         return None
 
+    original_config_aug = config_module.AUGMENTATION_CONFIG
+    original_dataset_aug = dataset_module.AUGMENTATION_CONFIG
+
     try:
+        if "quality_aug" in experiment_id:
+            print("  Augmentation: quality_aug (luz/crop/blur suaves para campo)")
+            config_module.AUGMENTATION_CONFIG = QUALITY_AUG_CONFIG
+            dataset_module.AUGMENTATION_CONFIG = QUALITY_AUG_CONFIG
+
         history = train(
             experiment_id=experiment_id,
             dataset_mode=dataset_mode,
@@ -209,20 +253,23 @@ def correr_experimento(
         return None
 
     finally:
+        config_module.AUGMENTATION_CONFIG = original_config_aug
+        dataset_module.AUGMENTATION_CONFIG = original_dataset_aug
         # Limpiar memoria entre experimentos, haya fallado o no
         _limpiar_memoria_gpu()
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
-def _listar_experimentos() -> None:
+def _listar_experimentos(suite: str = "current") -> None:
     """Imprime la tabla de todos los experimentos disponibles."""
+    experiments = _experiments_for_suite(suite)
     print(f"\n{'═' * 80}")
-    print(f"  DetectVID — Experimentos disponibles ({len(EXPERIMENTS)} runs)")
+    print(f"  DetectVID — Experimentos disponibles ({len(experiments)} runs) | suite={suite}")
     print(f"{'═' * 80}")
     print(f"  {'ID':<35} {'Modelo':<18} {'Dataset':<16} {'Split':<18} {'Balanceo'}")
     print(f"  {'─'*35} {'─'*18} {'─'*16} {'─'*18} {'─'*16}")
-    for exp_id, model, dataset, split, balancing in EXPERIMENTS:
+    for exp_id, model, dataset, split, balancing in experiments:
         split_str = split or "None"
         print(f"  {exp_id:<35} {model:<18} {dataset:<16} {split_str:<18} {balancing}")
     print(f"{'═' * 80}\n")
@@ -248,6 +295,12 @@ Ejemplos:
         default=None,
         metavar="ID",
         help="ID del experimento a correr (default: todos)",
+    )
+    parser.add_argument(
+        "--suite",
+        choices=["current", "closeup", "all"],
+        default="current",
+        help="Suite de experimentos: current (default), closeup o all",
     )
     parser.add_argument(
         "--no-wandb",
@@ -278,30 +331,32 @@ def main() -> None:
 
     # ── Listar y salir ─────────────────────────────────────────────────────
     if args.list:
-        _listar_experimentos()
+        _listar_experimentos(args.suite)
         return
 
     wandb_enabled = not args.no_wandb
     dry_run       = args.dry_run
 
     # ── Seleccionar qué experimentos correr ────────────────────────────────
+    experimentos_disponibles = _experiments_for_suite(args.suite)
     if args.experiment is not None:
         # Buscar el experimento por ID
         experimentos_filtrados = [
-            exp for exp in EXPERIMENTS if exp[0] == args.experiment
+            exp for exp in experimentos_disponibles if exp[0] == args.experiment
         ]
         if not experimentos_filtrados:
-            ids_validos = [exp[0] for exp in EXPERIMENTS]
+            ids_validos = [exp[0] for exp in experimentos_disponibles]
             print(f"[ERROR] Experimento '{args.experiment}' no encontrado.")
             print(f"        IDs válidos: {ids_validos}")
             sys.exit(1)
     else:
-        experimentos_filtrados = EXPERIMENTS
+        experimentos_filtrados = experimentos_disponibles
 
     # ── Resumen antes de correr ────────────────────────────────────────────
     print(f"\n{'═' * 70}")
     print(f"  DetectVID — Sesión de experimentos")
     print(f"  Runs a ejecutar : {len(experimentos_filtrados)}")
+    print(f"  Suite           : {args.suite}")
     print(f"  Dispositivo     : {DEVICE.upper()}")
     print(f"  W&B             : {'activo (proyecto: ' + WANDB_PROJECT + ')' if wandb_enabled else 'desactivado'}")
     print(f"  Dry-run         : {'sí' if dry_run else 'no'}")

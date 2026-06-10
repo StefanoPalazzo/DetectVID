@@ -55,6 +55,7 @@ WANDB_ENTITY  = None   # Completar con tu usuario si querés especificarlo expl�
 #   "3cls_no_zenodo"  → solo originales (healthy, oidio, peronospora). Baseline.
 #   "3cls_zenodo"     → originales + zenodo, 3 clases
 #   "4cls_zenodo"     → originales + zenodo, 4 clases (agrega "others")
+#   "4cls_closeup"    → solo Datasets/<clase>/closeup/<fuente>, dominio campo
 #
 # SPLIT_MODE: cómo manejar los splits del zenodo
 #   None              → split 70/15/15 sobre todo el pool (para 3cls_no_zenodo)
@@ -131,7 +132,7 @@ CLASS_DISPLAY_NAMES = {
 # Se calcula dinámicamente según DATASET_MODE para que model.py y train.py
 # no tengan que importar lógica del dataset.
 
-NUM_CLASSES = 4 if DATASET_MODE == "4cls_zenodo" else 3
+NUM_CLASSES = 4 if DATASET_MODE.startswith("4cls") else 3
 
 # ─── Splits ──────────────────────────────────────────────────────────────────
 #

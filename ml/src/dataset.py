@@ -56,6 +56,19 @@ from config import (
 # ─── Extensiones de imagen admitidas ─────────────────────────────────────────
 VALID_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
 
+# Subcarpetas que nunca deben entrar al entrenamiento al escanear una clase raíz.
+# `closeup` sí se incluye porque es el dominio principal de producción.
+EXCLUDED_TRAINING_DIRS = {
+    "distant_or_canopy",
+    "flat_background",
+    "low_quality",
+    "not_suitable",
+    "IGNORED_flat_backgrounds",
+    "_raw_imports",
+    "_extracted",
+    "_reports",
+}
+
 
 # ─── Mapeo de clases según modo ───────────────────────────────────────────────
 
@@ -66,7 +79,7 @@ def get_class_mapping(dataset_mode: str) -> Tuple[Dict[str, int], Dict[int, str]
     Para 4 clases, "others" tiene índice 3, así los índices 0-2 son
     compatibles con los modelos de 3 clases.
     """
-    mapping = CLASS_TO_IDX_4 if dataset_mode == "4cls_zenodo" else CLASS_TO_IDX_3
+    mapping = CLASS_TO_IDX_4 if dataset_mode.startswith("4cls") else CLASS_TO_IDX_3
     return mapping, {v: k for k, v in mapping.items()}
 
 
@@ -87,9 +100,33 @@ def scan_class_dir(class_name: str, class_root: Path) -> List[Dict]:
 
     records = []
     for path in class_root.rglob("*"):
+        if any(part in EXCLUDED_TRAINING_DIRS for part in path.relative_to(class_root).parts[:-1]):
+            continue
         if path.suffix.lower() not in VALID_EXTENSIONS:
             continue
-        records.append({"image_path": str(path), "label": class_name})
+        records.append({
+            "image_path": str(path),
+            "label": class_name,
+            "source": _infer_source(class_root, path),
+        })
+    return records
+
+
+def _infer_source(class_root: Path, image_path: Path) -> str:
+    """Devuelve la fuente inmediata para reportar distribución por subcarpeta."""
+    try:
+        rel = image_path.relative_to(class_root)
+    except ValueError:
+        return "unknown"
+    return rel.parts[0] if len(rel.parts) > 1 else class_root.name
+
+
+def _scan_closeup_class_dir(class_name: str) -> List[Dict]:
+    """Escanea únicamente Datasets/<clase>/closeup para el modo de campo."""
+    class_root = CLASS_DIRS[class_name] / "closeup"
+    records = scan_class_dir(class_name, class_root)
+    for record in records:
+        record["domain"] = "closeup"
     return records
 
 
@@ -106,11 +143,14 @@ def _scan_with_split_hint(class_name: str, class_root: Path, split_hint: str) ->
 
     records = []
     for path in class_root.rglob("*"):
+        if any(part in EXCLUDED_TRAINING_DIRS for part in path.relative_to(class_root).parts[:-1]):
+            continue
         if path.suffix.lower() not in VALID_EXTENSIONS:
             continue
         records.append({
             "image_path": str(path),
             "label":      class_name,
+            "source":     _infer_source(class_root, path),
             "split_hint": split_hint,
         })
     return records
@@ -157,6 +197,12 @@ def build_dataframe_for_experiment(
             return _build_4cls_zenodo_mixed()
         else:
             raise ValueError(f"split_mode '{split_mode}' no válido para dataset_mode '{dataset_mode}'")
+
+    elif dataset_mode == "4cls_closeup":
+        if split_mode == "split_mixed":
+            return _build_4cls_closeup()
+        else:
+            raise ValueError("4cls_closeup requiere split_mode='split_mixed'")
 
     else:
         raise ValueError(f"dataset_mode '{dataset_mode}' no reconocido")
@@ -285,6 +331,45 @@ def _build_4cls_zenodo_mixed() -> pd.DataFrame:
     print(f"    {'others':12s} → {len(r_otros):5d} orig + {len(r_oth_train):5d} zen_train + {len(r_oth_val):5d} zen_val")
 
     df = pd.DataFrame(records)
+    print(f"  Total: {len(df)} imágenes")
+    return _apply_split_70_15_15(df)
+
+
+def _build_4cls_closeup() -> pd.DataFrame:
+    """
+    Dataset principal de producción: solo imágenes close-up ya curadas.
+
+    Escanea exclusivamente:
+      Datasets/healthy/closeup/
+      Datasets/oidio/closeup/
+      Datasets/peronospora/closeup/
+      Datasets/otros/closeup/
+
+    No incluye fotos lejanas/canopia, fondos planos ni baja calidad.
+    """
+    print("  [4cls_closeup] Escaneando solo fuentes close-up curadas...")
+    records = []
+
+    for clase in ["healthy", "oidio", "peronospora", "others"]:
+        r = _scan_closeup_class_dir(clase)
+        # La carpeta física se llama "otros", pero la etiqueta del modelo es "others".
+        for record in r:
+            record["label"] = clase
+        records.extend(r)
+        print(f"    {clase:12s} closeup → {len(r):5d} imágenes")
+
+    df = pd.DataFrame(records)
+    if df.empty:
+        raise ValueError(
+            "4cls_closeup no tiene imágenes. Colocá datasets curados bajo "
+            "Datasets/<clase>/closeup/<fuente>/ antes de entrenar."
+        )
+
+    present = set(df["label"].unique())
+    missing = set(CLASS_TO_IDX_4.keys()) - present
+    if missing:
+        raise ValueError(f"4cls_closeup incompleto: faltan clases {sorted(missing)}")
+
     print(f"  Total: {len(df)} imágenes")
     return _apply_split_70_15_15(df)
 
@@ -836,6 +921,15 @@ def get_dataloaders(
     # Clases con menos imágenes → peso más alto → más penalización si se equivoca.
     n_total      = len(train_df)
     class_counts = train_df["label"].value_counts().to_dict()
+    source_counts = {}
+    if "source" in train_df.columns:
+        source_counts = (
+            train_df
+            .groupby(["label", "source"])
+            .size()
+            .sort_values(ascending=False)
+            .to_dict()
+        )
 
     class_weight_list = []
     for i in range(n_classes):
@@ -850,6 +944,7 @@ def get_dataloaders(
         "val_df":        val_df,
         "test_df":       test_df,
         "class_counts":  class_counts,
+        "source_counts": source_counts,
         "class_weights": class_weights_tensor,
         "class_to_idx":  class_to_idx,
         "idx_to_class":  idx_to_class,
