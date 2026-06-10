@@ -11,8 +11,11 @@ Cada experimento explora una dimensión del diseño:
   - balanceo:      weighted_full vs undersampled
 
 Uso:
-    # Correr todos los experimentos
+    # Correr todos los experimentos actuales
     python src/experiments.py
+
+    # Correr la suite nocturna curada para campo
+    python src/experiments.py --suite field
 
     # Correr un experimento específico
     python src/experiments.py --experiment exp01_baseline_eff
@@ -158,13 +161,33 @@ CLOSEUP_EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
 ]
 
 
+# ─── Experimentos nocturnos de campo curado ─────────────────────────────────
+#
+# 8 runs x 15 épocas máximas = razonable para una noche con early stopping.
+# Usan split_respected para no mezclar datasets que ya vienen train/val/test.
+# No incluyen healthy lejano/canopia, fondos planos ni grapes.
+
+FIELD_EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
+    ("exp40_4cls_field_res18_weighted",              "resnet18",        "4cls_field_curated",       "split_respected", "weighted_full"),
+    ("exp41_4cls_field_eff_weighted",                "efficientnet_b0", "4cls_field_curated",       "split_respected", "weighted_full"),
+    ("exp42_4cls_field_mob_weighted",                "mobilenet_v3",    "4cls_field_curated",       "split_respected", "weighted_full"),
+    ("exp43_4cls_field_res18_quality_aug",           "resnet18",        "4cls_field_curated",       "split_respected", "weighted_full"),
+    ("exp44_4cls_field_eff_quality_aug",             "efficientnet_b0", "4cls_field_curated",       "split_respected", "weighted_full"),
+    ("exp45_4cls_field_res18_under",                 "resnet18",        "4cls_field_curated",       "split_respected", "undersampled"),
+    ("exp46_4cls_field_eff_under",                   "efficientnet_b0", "4cls_field_curated",       "split_respected", "undersampled"),
+    ("exp47_4cls_field_broad_others_res18_quality",  "resnet18",        "4cls_field_broad_others",  "split_respected", "weighted_full"),
+]
+
+
 def _experiments_for_suite(suite: str) -> List[Tuple[str, str, str, Optional[str], str]]:
     if suite == "current":
         return EXPERIMENTS
     if suite == "closeup":
         return CLOSEUP_EXPERIMENTS
+    if suite == "field":
+        return FIELD_EXPERIMENTS
     if suite == "all":
-        return EXPERIMENTS + CLOSEUP_EXPERIMENTS
+        return EXPERIMENTS + CLOSEUP_EXPERIMENTS + FIELD_EXPERIMENTS
     raise ValueError(f"Suite no soportada: {suite}")
 
 
@@ -298,9 +321,9 @@ Ejemplos:
     )
     parser.add_argument(
         "--suite",
-        choices=["current", "closeup", "all"],
+        choices=["current", "closeup", "field", "all"],
         default="current",
-        help="Suite de experimentos: current (default), closeup o all",
+        help="Suite de experimentos: current (default), closeup, field o all",
     )
     parser.add_argument(
         "--no-wandb",

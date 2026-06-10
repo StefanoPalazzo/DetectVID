@@ -55,7 +55,9 @@ WANDB_ENTITY  = None   # Completar con tu usuario si querés especificarlo expl�
 #   "3cls_no_zenodo"  → solo originales (healthy, oidio, peronospora). Baseline.
 #   "3cls_zenodo"     → originales + zenodo, 3 clases
 #   "4cls_zenodo"     → originales + zenodo, 4 clases (agrega "others")
-#   "4cls_closeup"    → solo Datasets/<clase>/closeup/<fuente>, dominio campo
+#   "4cls_closeup"           → solo Datasets/<clase>/closeup/<fuente>, dominio campo
+#   "4cls_field_curated"     → fuentes close-up por nombre, excluye distante/flat/grapes
+#   "4cls_field_broad_others"→ curated + gvlid_* solo en others para comparar
 #
 # SPLIT_MODE: cómo manejar los splits del zenodo
 #   None              → split 70/15/15 sobre todo el pool (para 3cls_no_zenodo)
@@ -116,7 +118,7 @@ CLASS_TO_IDX_4 = {
 }
 
 # Se asigna dinámicamente según DATASET_MODE (ver abajo)
-CLASS_TO_IDX = CLASS_TO_IDX_3 if DATASET_MODE != "4cls_zenodo" else CLASS_TO_IDX_4
+CLASS_TO_IDX = CLASS_TO_IDX_4 if DATASET_MODE.startswith("4cls") else CLASS_TO_IDX_3
 IDX_TO_CLASS = {v: k for k, v in CLASS_TO_IDX.items()}
 
 # Nombre humano para cada clase (para reportes, plots y UI)

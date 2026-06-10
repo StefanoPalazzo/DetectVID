@@ -18,9 +18,12 @@ Pipeline de datos:
   Es como pre-cocinar los ingredientes antes de empezar a cocinar.
 
 Modos de dataset (DATASET_MODE):
-  "3cls_no_zenodo"  → solo originales, 3 clases. Baseline.
-  "3cls_zenodo"     → originales + zenodo, 3 clases
-  "4cls_zenodo"     → originales + zenodo, 4 clases (agrega "others")
+  "3cls_no_zenodo"         → solo originales, 3 clases. Baseline.
+  "3cls_zenodo"            → originales + zenodo, 3 clases
+  "4cls_zenodo"            → originales + zenodo, 4 clases (agrega "others")
+  "4cls_closeup"           → solo Datasets/<clase>/closeup/<fuente>
+  "4cls_field_curated"     → fuentes close-up curadas por nombre, excluye distante/flat/grapes
+  "4cls_field_broad_others"→ igual que curated, pero prueba gvlid_* en others
 
 Estrategias de split (SPLIT_MODE):
   None              → split 70/15/15 puro sobre todo el pool
@@ -36,7 +39,7 @@ import sys
 import hashlib
 import pandas as pd
 from pathlib import Path
-from typing import Tuple, Dict, List, Optional
+from typing import Tuple, Dict, List, Optional, Iterable
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -67,6 +70,65 @@ EXCLUDED_TRAINING_DIRS = {
     "_raw_imports",
     "_extracted",
     "_reports",
+}
+
+
+# Reglas de curación por fuente. Estas reglas NO mueven ni borran datasets;
+# solo deciden qué carpetas entran a los experimentos de campo.
+#
+# Principio: producción espera fotos close-up. Por eso se excluyen healthy
+# distante/canopia, fondos planos de laboratorio y el dataset `grapes`.
+FIELD_CURATED_FREE_SOURCES = {
+    "healthy": [
+        "closeup",
+        "coco_healthy",
+        "zenodo2_Healthy",
+        "zenodo2_healthy",
+    ],
+    "oidio": [
+        "closeup",
+        "zenodo2_Powdery Mildew",
+        "白粉病 - oidio",
+    ],
+    "peronospora": [
+        "closeup",
+        "zenodo2_Downy Mildew",
+        "霜霉病 - peronospora",
+    ],
+    "others": [
+        "closeup",
+        "zenodo2_Erineum Mite",
+        "zenodo2_Esca Complex",
+        "溃疡病",
+        "灰霉病",
+        "花叶病毒病",
+        "酸腐病 - podredumbre acida",
+    ],
+}
+
+# Variant for a controlled experiment: gvlid healthy is distant and stays out,
+# but gvlid disease folders can be tested as broad "others" examples.
+FIELD_BROAD_OTHERS_EXTRA_SOURCES = {
+    "others": [
+        "gvlid_black_rot",
+        "gvlid_esca",
+        "gvlid_leaf_blight",
+    ],
+}
+
+# Sources that ship with pre-defined splits. When split_respected is selected,
+# do not mix these folders randomly: similar internet images can otherwise leak
+# across train/val/test and inflate metrics.
+FIELD_PRESERVED_SPLIT_SOURCES = {
+    "oidio": ["zenodo_oidio"],
+    "peronospora": ["zenodo_peronospora"],
+    "others": ["zenodo_others"],
+}
+
+SPLIT_FOLDER_ALIASES = {
+    "train": ("train", "Train", "training", "Training"),
+    "val": ("val", "Val", "valid", "validation", "Validation"),
+    "test": ("test", "Test", "testing", "Testing"),
 }
 
 
@@ -127,6 +189,106 @@ def _scan_closeup_class_dir(class_name: str) -> List[Dict]:
     records = scan_class_dir(class_name, class_root)
     for record in records:
         record["domain"] = "closeup"
+    return records
+
+
+def _scan_source_dir(
+    class_name: str,
+    source_root: Path,
+    source_name: str,
+    split_hint: Optional[str] = None,
+    domain: str = "closeup",
+) -> List[Dict]:
+    """Escanea una fuente concreta manteniendo source estable para reportes."""
+    if not source_root.exists():
+        print(f"  ⚠️  Fuente no encontrada (se omite): {source_root}")
+        return []
+
+    records = []
+    for path in source_root.rglob("*"):
+        try:
+            rel_parts = path.relative_to(source_root).parts[:-1]
+        except ValueError:
+            rel_parts = ()
+        if any(part in EXCLUDED_TRAINING_DIRS for part in rel_parts):
+            continue
+        if path.suffix.lower() not in VALID_EXTENSIONS:
+            continue
+        record = {
+            "image_path": str(path),
+            "label": class_name,
+            "source": source_name,
+            "domain": domain,
+        }
+        if split_hint is not None:
+            record["split_hint"] = split_hint
+        records.append(record)
+    return records
+
+
+def _scan_named_sources(class_name: str, source_names: Iterable[str], split_hint: Optional[str] = None) -> List[Dict]:
+    """Escanea fuentes por nombre dentro de la carpeta física de la clase."""
+    class_root = CLASS_DIRS[class_name]
+    records = []
+    seen_names = set()
+    seen_roots = set()
+    for source_name in source_names:
+        normalized_name = source_name.casefold()
+        source_root = class_root / source_name
+        try:
+            normalized_root = str(source_root.resolve()).casefold()
+        except OSError:
+            normalized_root = str(source_root).casefold()
+
+        # macOS suele ser case-insensitive: zenodo2_Healthy y zenodo2_healthy
+        # pueden apuntar a la misma carpeta. Evitamos duplicar imágenes.
+        if normalized_name in seen_names or normalized_root in seen_roots:
+            continue
+        seen_names.add(normalized_name)
+        seen_roots.add(normalized_root)
+
+        records.extend(_scan_source_dir(class_name, source_root, source_name, split_hint=split_hint))
+    return records
+
+
+def _split_source_subdirs(source_root: Path, canonical_source: str) -> Dict[str, List[Path]]:
+    """Detecta carpetas train/val/test dentro de una fuente preservada."""
+    found = {"train": [], "val": [], "test": []}
+    if not source_root.exists():
+        return found
+
+    for child in source_root.iterdir():
+        if not child.is_dir():
+            continue
+        lower = child.name.lower()
+        for split, aliases in SPLIT_FOLDER_ALIASES.items():
+            alias_matches = [alias.lower() for alias in aliases]
+            expected = f"{canonical_source}_{split}".lower()
+            if lower == expected or lower in alias_matches or lower.endswith(f"_{split}"):
+                found[split].append(child)
+                break
+    return found
+
+
+def _scan_preserved_split_sources(class_name: str, respect_splits: bool) -> List[Dict]:
+    """Escanea fuentes tipo zenodo_* preservando train/val/test si corresponde."""
+    records = []
+    for source_name in FIELD_PRESERVED_SPLIT_SOURCES.get(class_name, []):
+        source_root = CLASS_DIRS[class_name] / source_name
+        if not source_root.exists():
+            print(f"  ⚠️  Fuente preservada no encontrada (se omite): {source_root}")
+            continue
+
+        split_dirs = _split_source_subdirs(source_root, source_name)
+        if not any(split_dirs.values()):
+            # Fallback: si no trae subcarpetas reconocibles, tratar como fuente libre.
+            records.extend(_scan_source_dir(class_name, source_root, source_name, split_hint="free" if respect_splits else None))
+            continue
+
+        for split, dirs in split_dirs.items():
+            hint = split if respect_splits else None
+            for split_dir in dirs:
+                records.extend(_scan_source_dir(class_name, split_dir, source_name, split_hint=hint))
     return records
 
 
@@ -203,6 +365,16 @@ def build_dataframe_for_experiment(
             return _build_4cls_closeup()
         else:
             raise ValueError("4cls_closeup requiere split_mode='split_mixed'")
+
+    elif dataset_mode in {"4cls_field_curated", "4cls_field_broad_others"}:
+        if split_mode == "split_respected":
+            return _build_4cls_field_sources(dataset_mode, respect_splits=True)
+        elif split_mode == "split_mixed":
+            return _build_4cls_field_sources(dataset_mode, respect_splits=False)
+        else:
+            raise ValueError(
+                f"{dataset_mode} requiere split_mode='split_respected' o 'split_mixed'"
+            )
 
     else:
         raise ValueError(f"dataset_mode '{dataset_mode}' no reconocido")
@@ -335,6 +507,46 @@ def _build_4cls_zenodo_mixed() -> pd.DataFrame:
     return _apply_split_70_15_15(df)
 
 
+def _build_4cls_field_sources(dataset_mode: str, respect_splits: bool) -> pd.DataFrame:
+    """
+    Dataset de campo curado por nombre de fuente, sin mover carpetas.
+
+    Incluye close-ups descritos por el usuario y excluye explícitamente:
+    healthy distante/canopia, fondos planos de laboratorio y `Datasets/grapes`.
+    """
+    split_name = "split_respected" if respect_splits else "split_mixed"
+    print(f"  [{dataset_mode} / {split_name}] Escaneando fuentes close-up curadas...")
+
+    records = []
+    for clase in ["healthy", "oidio", "peronospora", "others"]:
+        source_names = list(FIELD_CURATED_FREE_SOURCES[clase])
+        if dataset_mode == "4cls_field_broad_others":
+            source_names.extend(FIELD_BROAD_OTHERS_EXTRA_SOURCES.get(clase, []))
+
+        free_hint = "free" if respect_splits else None
+        r_free = _scan_named_sources(clase, source_names, split_hint=free_hint)
+        r_split = _scan_preserved_split_sources(clase, respect_splits=respect_splits)
+        records.extend(r_free + r_split)
+        print(
+            f"    {clase:12s} → {len(r_free):5d} curated/free + "
+            f"{len(r_split):5d} preserved-split"
+        )
+
+    df = pd.DataFrame(records)
+    if df.empty:
+        raise ValueError(f"{dataset_mode} no tiene imágenes disponibles")
+
+    present = set(df["label"].unique())
+    missing = set(CLASS_TO_IDX_4.keys()) - present
+    if missing:
+        raise ValueError(f"{dataset_mode} incompleto: faltan clases {sorted(missing)}")
+
+    print(f"  Total: {len(df)} imágenes")
+    if respect_splits:
+        return _apply_split_respected(df)
+    return _apply_split_70_15_15(df)
+
+
 def _build_4cls_closeup() -> pd.DataFrame:
     """
     Dataset principal de producción: solo imágenes close-up ya curadas.
@@ -438,11 +650,14 @@ def _apply_split_respected(df_all: pd.DataFrame) -> pd.DataFrame:
     else:
         free_split = pd.DataFrame(columns=["image_path", "label", "split"])
 
-    result = pd.concat([
-        forced_train[["image_path", "label", "split"]],
-        forced_val[["image_path", "label", "split"]],
-        free_split[["image_path", "label", "split"]],
-    ]).reset_index(drop=True)
+    forced_test = df_all[df_all["split_hint"] == "test"].copy()
+    forced_test["split"] = "test"
+
+    frames = [forced_train, forced_val, forced_test, free_split]
+    frames = [frame for frame in frames if len(frame) > 0]
+    result = pd.concat(frames, sort=False).reset_index(drop=True)
+    if "split_hint" in result.columns:
+        result = result.drop(columns=["split_hint"])
 
     return result
 
