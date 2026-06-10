@@ -29,6 +29,9 @@ from config import (
 )
 from model import load_model
 
+UNCERTAIN_CONFIDENCE_THRESHOLD = 0.70
+UNCERTAIN_MARGIN_THRESHOLD = 0.15
+
 
 # ─── Preprocesamiento ────────────────────────────────────────────────────────
 
@@ -80,9 +83,16 @@ def predict(image_path: str, model=None, device: str = DEVICE) -> dict:
     logits = model(image)
     probabilities = F.softmax(logits, dim=1).squeeze()  # (3,)
 
-    pred_idx = probabilities.argmax().item()
+    sorted_probs, sorted_indices = torch.sort(probabilities, descending=True)
+    pred_idx = sorted_indices[0].item()
     pred_class = IDX_TO_CLASS[pred_idx]
-    confidence = probabilities[pred_idx].item()
+    confidence = sorted_probs[0].item()
+    runner_up_confidence = sorted_probs[1].item() if len(sorted_probs) > 1 else 0.0
+    top1_margin = confidence - runner_up_confidence
+    is_uncertain = (
+        confidence < UNCERTAIN_CONFIDENCE_THRESHOLD
+        or top1_margin < UNCERTAIN_MARGIN_THRESHOLD
+    )
 
     prob_dict = {}
     for i in range(len(IDX_TO_CLASS)):
@@ -93,6 +103,13 @@ def predict(image_path: str, model=None, device: str = DEVICE) -> dict:
         "class": pred_class,
         "display_name": CLASS_DISPLAY_NAMES[pred_class],
         "confidence": confidence,
+        "top1_margin": top1_margin,
+        "is_uncertain": is_uncertain,
+        "decision_status": "uncertain" if is_uncertain else "accepted",
+        "thresholds": {
+            "confidence": UNCERTAIN_CONFIDENCE_THRESHOLD,
+            "margin": UNCERTAIN_MARGIN_THRESHOLD,
+        },
         "probabilities": prob_dict,
     }
 

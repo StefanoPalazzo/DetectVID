@@ -52,6 +52,10 @@ class PredictController:
             predicted_class=result["class"],
             display_name=result["display_name"],
             confidence=result["confidence"],
+            top1_margin=result["top1_margin"],
+            is_uncertain=result["is_uncertain"],
+            decision_status=result["decision_status"],
+            thresholds=result["thresholds"],
             probabilities=result["probabilities"],
             model_name=self._service.model_name(),
         )

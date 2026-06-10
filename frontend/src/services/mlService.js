@@ -54,6 +54,36 @@ const CLASS_META = {
       'fungicidas cúpricos o sistémicos específicos. La temperatura y humedad ' +
       'actuales favorecen el desarrollo. Revisión urgente del lote afectado.',
   },
+  others: {
+    disease:     'Otra enfermedad o daño',
+    diseaseKey:  'others',
+    status:      'No clasificada',
+    riskLevel:   'Medio',
+    riskColor:   'yellow',
+    urgency:     'Revisión recomendada',
+    symptoms: [
+      'La imagen parece mostrar síntomas que no corresponden claramente a oídio ni peronóspora.',
+      'Puede tratarse de otra enfermedad, daño fisiológico, quemadura, deficiencia nutricional o senescencia.',
+    ],
+    recommendation:
+      'El modelo detectó un patrón fuera de las clases principales. Se recomienda tomar una foto cercana adicional ' +
+      'y consultar con un ingeniero agrónomo antes de decidir un tratamiento.',
+  },
+  uncertain: {
+    disease:     'Resultado incierto',
+    diseaseKey:  'uncertain',
+    status:      'Incierto',
+    riskLevel:   'Indeterminado',
+    riskColor:   'gray',
+    urgency:     'Repetir foto',
+    symptoms: [
+      'El modelo no tiene suficiente certeza para emitir un diagnóstico confiable.',
+      'La foto puede tener poca luz, reflejos, distancia excesiva, encuadre incompleto o síntomas ambiguos.',
+    ],
+    recommendation:
+      'Repetí la captura con una hoja o racimo en primer plano, buena iluminación, foco nítido y sin sombras fuertes. ' +
+      'Si el síntoma persiste, compará varias hojas de la misma planta y pedí confirmación agronómica.',
+  },
 }
 
 /**
@@ -67,10 +97,12 @@ export async function analyzeLeafImage(imageFile) {
   const formData = new FormData()
   formData.append('file', imageFile)
 
+  const t0 = Date.now()
   const res = await fetch(`${ML_API_URL}/predict`, {
     method: 'POST',
     body: formData,
   })
+  const processingMs = Date.now() - t0
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -78,25 +110,29 @@ export async function analyzeLeafImage(imageFile) {
   }
 
   const data = await res.json()
-  // data = { predicted_class, display_name, confidence, probabilities, model_name }
+  // data = { predicted_class, display_name, confidence, top1_margin, is_uncertain, decision_status, probabilities, model_name }
 
-  const meta = CLASS_META[data.predicted_class] ?? CLASS_META['healthy']
+  const meta = data.is_uncertain
+    ? CLASS_META.uncertain
+    : CLASS_META[data.predicted_class] ?? CLASS_META.uncertain
   const confidence = Math.round(data.confidence * 100)
-  const affectedArea = meta.riskLevel === 'Bajo' ? 0 : Math.round((1 - data.confidence) * 60 + 10)
+  const affectedArea = ['Bajo', 'Indeterminado'].includes(meta.riskLevel)
+    ? 0
+    : Math.round((1 - data.confidence) * 60 + 10)
 
   // Mismo formato que devuelve mockAnalysis — ResultsCard espera esta estructura
   return {
     success:        true,
     analysisId:     `DVD-${Date.now()}`,
     timestamp:      new Date().toISOString(),
-    processingTime: null,
+    processingTime: processingMs,
 
     image: {
       name:       imageFile.name,
       size:       imageFile.size,
       type:       imageFile.type,
       dimensions: null,
-      quality:    confidence > 70 ? 'good' : 'low',
+      quality:    data.is_uncertain ? 'low' : confidence > 70 ? 'good' : 'low',
     },
 
     result: {
@@ -106,10 +142,20 @@ export async function analyzeLeafImage(imageFile) {
       confidence,
       riskLevel:      meta.riskLevel,
       riskColor:      meta.riskColor,
-      affectedArea:   meta.riskLevel === 'Bajo' ? '~0%' : `~${affectedArea}%`,
+      affectedArea:   meta.riskLevel === 'Indeterminado'
+        ? 'No estimada'
+        : meta.riskLevel === 'Bajo'
+          ? '~0%'
+          : `~${affectedArea}%`,
       urgency:        meta.urgency,
       symptoms:       meta.symptoms,
       recommendation: meta.recommendation,
+      rawPrediction:  data.predicted_class,
+      decisionStatus: data.decision_status,
+      isUncertain:    data.is_uncertain,
+      top1Margin:     Math.round((data.top1_margin ?? 0) * 100),
+      thresholds:     data.thresholds,
+      probabilities:  data.probabilities,
     },
 
     model: {

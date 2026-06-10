@@ -15,6 +15,10 @@ class PredictionResponse(BaseModel):
     predicted_class: str
     display_name: str
     confidence: float
+    top1_margin: float
+    is_uncertain: bool
+    decision_status: str
+    thresholds: dict[str, float]
     probabilities: dict[str, float]
     model_name: Optional[str] = None
 

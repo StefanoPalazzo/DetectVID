@@ -2,11 +2,6 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema requeridas por algunas librerías (ej. OpenCV si se usara, o para compilar)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 
 # Instalar versión CPU de PyTorch para ahorrar muchísimo espacio (~2GB) y RAM en el despliegue
