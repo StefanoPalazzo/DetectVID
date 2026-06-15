@@ -36,10 +36,12 @@ class SyncEngine(
                     latitude = item.latitude,
                     longitude = item.longitude,
                 )
-                val mark = TimeSource.Monotonic.markNow()
-                val prediction = api.predict(image)
-                val envelope = buildAnalysisEnvelope(image, prediction, mark.elapsedNow().inWholeMilliseconds.toInt())
-                onState(store.savePrediction(item.id, envelope))
+                val envelope = item.result ?: run {
+                    val mark = TimeSource.Monotonic.markNow()
+                    val prediction = api.predict(image)
+                    buildAnalysisEnvelope(image, prediction, mark.elapsedNow().inWholeMilliseconds.toInt())
+                        .also { onState(store.savePrediction(item.id, it)) }
+                }
                 val saved = api.saveAnalysis(image, envelope)
                 onState(store.markSynced(item.id, saved.analysis?.id))
             }.onFailure { error ->

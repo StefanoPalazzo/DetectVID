@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.kotlinCompose)
     alias(libs.plugins.kotlinSerialization)
+    id("org.jetbrains.kotlin.native.cocoapods")
 }
 
 kotlin {
@@ -51,6 +52,16 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+        }
+    }
+    cocoapods {
+        summary = "Shared ComposeApp module"
+        homepage = "https://your.project.homepage/"
+        version = "1.0.0"
+        ios.deploymentTarget = "14.1" // Or your actual target
+        framework {
+            baseName = "ComposeApp"
+            isStatic = true // match what you have above
         }
     }
 }

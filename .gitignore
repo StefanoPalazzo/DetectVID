@@ -37,11 +37,11 @@ ml/checkpoints/*.pt
 # Datasets (no se versionan — demasiado grandes)
 ml/data/
 Datasets/
+DetectVID/
 
 # Resultados y plots
-ml/results/*.json
-ml/results/*.png
-ml/results/*.csv
+ml/results/
+ml/splits/
 
 # Logs
 *.log
@@ -59,8 +59,16 @@ frontend/.vite/
 
 # ─── Miscelánea ───────────────────────────────────────
 .atl/
-Fuentes.rtf
-Recomendaciones.rtfd/
+*.rtf
+*.rtfd/
+
+# Legacy/root Vite app leftovers. The web app lives in frontend/.
+/index.html
+/package.json
+/postcss.config.js
+/tailwind.config.js
+/vite.config.js
+/src/
 
 wandb/
 *.csv

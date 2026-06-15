@@ -40,7 +40,7 @@ async function upload(buffer, options = {}) {
   const filepath = path.join(dir, filename)
   await fs.promises.writeFile(filepath, buffer)
 
-  const baseUrl  = process.env.LOCAL_STORAGE_URL || 'http://localhost:3001'
+  const baseUrl  = (process.env.LOCAL_STORAGE_URL || '').trim().replace(/\/$/, '')
   const url      = `${baseUrl}/uploads/${subfolder}/${filename}`
   const publicId = `${subfolder}/${filename}`
 
@@ -60,7 +60,7 @@ async function deleteFile(publicId) {
 }
 
 function getUrl(publicId) {
-  const baseUrl = process.env.LOCAL_STORAGE_URL || 'http://localhost:3001'
+  const baseUrl = (process.env.LOCAL_STORAGE_URL || '').trim().replace(/\/$/, '')
   return `${baseUrl}/uploads/${publicId}`
 }
 

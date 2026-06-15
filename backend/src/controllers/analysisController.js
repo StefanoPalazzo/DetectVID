@@ -37,7 +37,7 @@ async function create(req, res) {
     // 1. Subir imagen al storage (Cloudinary, local, etc.)
     const uploaded = await storage.upload(req.file.buffer, {
       folder:   `detectvid/users/${userId}`,
-      filename: `${result.analysisId}-${Date.now()}`,
+      filename: buildStoredImageName(result.analysisId, req.file),
     })
 
     // 2. Parsear coordenadas GPS (opcionales)
@@ -223,6 +223,13 @@ async function deleteMany(req, res) {
  * Cloudinary: la URL tiene el publicId embebido.
  * Local: es la ruta relativa.
  */
+function buildStoredImageName(analysisId, file) {
+  const safeId = String(analysisId || `analysis-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '-')
+  const originalExt = file?.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0]?.toLowerCase()
+  const mimeExt = file?.mimetype === 'image/png' ? '.png' : file?.mimetype === 'image/webp' ? '.webp' : '.jpg'
+  return `${safeId}-${Date.now()}${originalExt || mimeExt}`
+}
+
 function extractPublicId(imageUrl, provider) {
   if (provider === 'cloudinary') {
     // Cloudinary URL format: .../upload/v123456/folder/public_id.ext

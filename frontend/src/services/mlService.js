@@ -6,6 +6,43 @@
 
 const ML_API_URL = import.meta.env.VITE_ML_API_URL || 'http://localhost:8000/api/ml'
 
+async function imageFileForPrediction(imageFile) {
+  if (!imageFile?.type?.startsWith('image/')) return imageFile
+  if (imageFile.size <= 900_000) return imageFile
+
+  const imageUrl = URL.createObjectURL(imageFile)
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = reject
+      img.src = imageUrl
+    })
+
+    const maxSide = 1024
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height))
+    const width = Math.max(1, Math.round(image.width * scale))
+    const height = Math.max(1, Math.round(image.height * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d', { alpha: false })
+    ctx.drawImage(image, 0, 0, width, height)
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+    if (!blob) return imageFile
+
+    return new File(
+      [blob],
+      imageFile.name.replace(/\.[^.]+$/, '') + '-ml.jpg',
+      { type: 'image/jpeg', lastModified: imageFile.lastModified }
+    )
+  } finally {
+    URL.revokeObjectURL(imageUrl)
+  }
+}
+
 // Mapeo de claves internas del modelo a los campos que espera el frontend
 const CLASS_META = {
   healthy: {
@@ -94,8 +131,9 @@ const CLASS_META = {
  * @returns {Promise<object>} resultado de clasificación con el formato que espera ResultsCard
  */
 export async function analyzeLeafImage(imageFile) {
+  const predictionFile = await imageFileForPrediction(imageFile)
   const formData = new FormData()
-  formData.append('file', imageFile)
+  formData.append('file', predictionFile)
 
   const t0 = Date.now()
   const res = await fetch(`${ML_API_URL}/predict`, {

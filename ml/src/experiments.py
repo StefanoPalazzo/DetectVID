@@ -179,6 +179,14 @@ FIELD_EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
 ]
 
 
+# Repetición académica/reproducible de los 8 experimentos de campo.
+# Mantiene la misma configuración, pero usa IDs nuevos para no pisar resultados anteriores.
+FIELD_REPRO_EXPERIMENTS: List[Tuple[str, str, str, Optional[str], str]] = [
+    (f"{exp_id}_repro_seed42", model, dataset, split, balancing)
+    for exp_id, model, dataset, split, balancing in FIELD_EXPERIMENTS
+]
+
+
 def _experiments_for_suite(suite: str) -> List[Tuple[str, str, str, Optional[str], str]]:
     if suite == "current":
         return EXPERIMENTS
@@ -186,6 +194,8 @@ def _experiments_for_suite(suite: str) -> List[Tuple[str, str, str, Optional[str
         return CLOSEUP_EXPERIMENTS
     if suite == "field":
         return FIELD_EXPERIMENTS
+    if suite == "field_repro":
+        return FIELD_REPRO_EXPERIMENTS
     if suite == "all":
         return EXPERIMENTS + CLOSEUP_EXPERIMENTS + FIELD_EXPERIMENTS
     raise ValueError(f"Suite no soportada: {suite}")
@@ -220,6 +230,7 @@ def correr_experimento(
     balancing_mode: str,
     wandb_enabled:  bool,
     dry_run:        bool = False,
+    evaluate_test:  bool = False,
 ) -> Optional[dict]:
     """
     Corre un único experimento.
@@ -267,6 +278,7 @@ def correr_experimento(
             learning_rate=LEARNING_RATE,
             device=DEVICE,
             wandb_enabled=wandb_enabled,
+            evaluate_test=evaluate_test,
         )
         return history
 
@@ -321,9 +333,9 @@ Ejemplos:
     )
     parser.add_argument(
         "--suite",
-        choices=["current", "closeup", "field", "all"],
+        choices=["current", "closeup", "field", "field_repro", "all"],
         default="current",
-        help="Suite de experimentos: current (default), closeup, field o all",
+        help="Suite de experimentos: current (default), closeup, field, field_repro o all",
     )
     parser.add_argument(
         "--no-wandb",
@@ -343,6 +355,12 @@ Ejemplos:
         default=False,
         help="Mostrar qué correría sin ejecutar nada",
     )
+    parser.add_argument(
+        "--evaluate-test",
+        action="store_true",
+        default=False,
+        help="Evaluar test al final del entrenamiento. No usar para seleccionar modelo; reservar para el ganador.",
+    )
 
     return parser.parse_args()
 
@@ -359,6 +377,7 @@ def main() -> None:
 
     wandb_enabled = not args.no_wandb
     dry_run       = args.dry_run
+    evaluate_test = args.evaluate_test
 
     # ── Seleccionar qué experimentos correr ────────────────────────────────
     experimentos_disponibles = _experiments_for_suite(args.suite)
@@ -383,6 +402,7 @@ def main() -> None:
     print(f"  Dispositivo     : {DEVICE.upper()}")
     print(f"  W&B             : {'activo (proyecto: ' + WANDB_PROJECT + ')' if wandb_enabled else 'desactivado'}")
     print(f"  Dry-run         : {'sí' if dry_run else 'no'}")
+    print(f"  Eval test       : {'sí' if evaluate_test else 'no (reservado para modelo seleccionado)'}")
     print(f"{'═' * 70}\n")
 
     if dry_run:
@@ -408,6 +428,7 @@ def main() -> None:
             balancing_mode=balancing_mode,
             wandb_enabled=wandb_enabled,
             dry_run=dry_run,
+            evaluate_test=evaluate_test,
         )
 
         if history is not None:

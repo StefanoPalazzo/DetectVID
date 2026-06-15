@@ -135,8 +135,32 @@
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/..\"\n./gradlew :composeApp:embedAndSignAppleFrameworkForXcode\n";
+			shellPath = /bin/bash;
+			shellScript = "set -e
+cd \"$SRCROOT/..\"
+
+BUILD_TYPE=\"Debug\"
+BUILD_TYPE_DIR=\"debug\"
+if [ \"$CONFIGURATION\" = \"Release\" ]; then
+  BUILD_TYPE=\"Release\"
+  BUILD_TYPE_DIR=\"release\"
+fi
+
+if [[ \"$SDK_NAME\" == iphonesimulator* ]]; then
+  KOTLIN_TARGET=\"IosSimulatorArm64\"
+  FRAMEWORK_SOURCE=\"composeApp/build/bin/iosSimulatorArm64/${BUILD_TYPE_DIR}Framework/ComposeApp.framework\"
+else
+  KOTLIN_TARGET=\"IosArm64\"
+  FRAMEWORK_SOURCE=\"composeApp/build/bin/iosArm64/${BUILD_TYPE_DIR}Framework/ComposeApp.framework\"
+fi
+
+./gradlew \":composeApp:link${BUILD_TYPE}Framework${KOTLIN_TARGET}\"
+
+FRAMEWORK_DEST=\"composeApp/build/xcode-frameworks/$CONFIGURATION/$SDK_NAME\"
+mkdir -p \"$FRAMEWORK_DEST\"
+rm -rf \"$FRAMEWORK_DEST/ComposeApp.framework\"
+cp -R \"$FRAMEWORK_SOURCE\" \"$FRAMEWORK_DEST/ComposeApp.framework\"
+";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -287,6 +311,7 @@
 					ComposeApp,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.detectvid.mobile;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				PRODUCT_NAME = DetectVID;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -316,6 +341,7 @@
 					ComposeApp,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.detectvid.mobile;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				PRODUCT_NAME = DetectVID;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

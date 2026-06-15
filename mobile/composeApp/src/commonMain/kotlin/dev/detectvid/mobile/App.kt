@@ -121,6 +121,7 @@ fun App() {
         var state by remember { mutableStateOf(MobileState()) }
         var message by remember { mutableStateOf<String?>(null) }
         var working by remember { mutableStateOf(false) }
+        var syncInProgress by remember { mutableStateOf(false) }
         var capturedCookie by remember { mutableStateOf<String?>(null) }
         var selectedTab by remember { mutableStateOf(MobileTab.Dashboard) }
         var showCameraChoices by remember { mutableStateOf(false) }
@@ -142,16 +143,18 @@ fun App() {
         }
 
         suspend fun syncNow(showMessage: Boolean = true) {
-            if (state.user == null) return
+            if (state.user == null || syncInProgress) return
+            syncInProgress = true
             working = true
             if (showMessage) message = "Sincronizando datos del viñedo..."
             runCatching {
                 state = syncEngine.syncAll { newState -> state = newState }
                 if (showMessage) message = "Sincronización completa"
             }.onFailure {
-                message = "No se pudo sincronizar: ${it.message ?: "error desconocido"}"
+                if (showMessage) message = "No se pudo sincronizar: ${it.message ?: "error desconocido"}"
             }
             working = false
+            syncInProgress = false
         }
 
         suspend fun addImage(image: PickedImage?) {
@@ -305,12 +308,11 @@ private fun UnauthenticatedScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(horizontal = 20.dp, vertical = 28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             HeroHeader(userName = null, working = working)
             AuthCard(working = working, onLogin = onLogin, onRegister = onRegister)
-            VineyardInfoCard()
         }
         MessageCard(message = message, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp))
     }
@@ -557,26 +559,27 @@ private fun BrandWordmark() {
 @Composable
 private fun BrandMark(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(Brush.linearGradient(listOf(Vine800, Color(0xFF059669)))),
+        modifier = modifier.clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(Color(0xFF0B7A3B), Color(0xFF059669)))),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(27.dp)) {
-            val stroke = 2.5.dp.toPx()
+        Canvas(modifier = Modifier.size(28.dp)) {
+            val stroke = 2.7.dp.toPx()
             drawOval(
                 color = Color.White,
-                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.20f, size.height * 0.13f),
-                size = androidx.compose.ui.geometry.Size(size.width * 0.62f, size.height * 0.74f),
+                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.18f, size.height * 0.10f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.64f, size.height * 0.76f),
                 style = Stroke(stroke),
             )
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(size.width * 0.22f, size.height * 0.78f),
-                end = androidx.compose.ui.geometry.Offset(size.width * 0.78f, size.height * 0.24f),
+                start = androidx.compose.ui.geometry.Offset(size.width * 0.18f, size.height * 0.78f),
+                end = androidx.compose.ui.geometry.Offset(size.width * 0.82f, size.height * 0.24f),
                 strokeWidth = stroke,
             )
         }
     }
 }
+
 
 @Composable
 private fun PageHeader(title: String, subtitle: String) {
@@ -1028,9 +1031,27 @@ private fun LegendChip(label: String, color: Color, modifier: Modifier = Modifie
 }
 
 private fun formatHistoryDate(value: String): String {
-    val date = value.substringBefore('T').takeIf { it.length == 10 } ?: return value
-    val time = value.substringAfter('T', "").take(5).takeIf { it.length == 5 } ?: "--:--"
-    return "$time · ${date.substring(8, 10)}/${date.substring(5, 7)}/${date.substring(0, 4)}"
+    val normalized = normalizeDateParts(value) ?: return "Fecha no disponible"
+    return "${normalized.time} · ${normalized.day}/${normalized.month}/${normalized.year}"
+}
+
+private data class DateParts(val year: String, val month: String, val day: String, val time: String) {
+    val isoDate: String = "$year-$month-$day"
+}
+
+private fun normalizeDateParts(value: String): DateParts? {
+    val cleaned = value.trim()
+    if (cleaned.length < 10) return null
+    val date = cleaned.take(10)
+    if (date.length != 10 || date[4] != '-' || date[7] != '-') return null
+    val timeStart = cleaned.drop(10).trimStart('T', ' ')
+    val time = timeStart.take(5).takeIf { it.length == 5 && it[2] == ':' } ?: "--:--"
+    return DateParts(
+        year = date.substring(0, 4),
+        month = date.substring(5, 7),
+        day = date.substring(8, 10),
+        time = time,
+    )
 }
 
 private fun Double.formatCoord(): String = toString().take(9)
@@ -1039,11 +1060,11 @@ private data class HistoryBucket(val title: String, val items: List<LocalAnalysi
 
 private fun groupAnalyses(items: List<LocalAnalysis>, mode: HistoryGroup): List<HistoryBucket> =
     items.groupBy { item ->
-        val date = item.createdAt.substringBefore('T').takeIf { it.length == 10 } ?: "Sin fecha"
+        val date = normalizeDateParts(item.createdAt)
         when (mode) {
-            HistoryGroup.Day -> date
-            HistoryGroup.Week -> if (date == "Sin fecha") date else "Semana ${date.substring(0, 4)}-${date.substring(5, 7)}"
-            HistoryGroup.Month -> if (date == "Sin fecha") date else "${date.substring(0, 4)}-${date.substring(5, 7)}"
+            HistoryGroup.Day -> date?.isoDate ?: "Fecha no disponible"
+            HistoryGroup.Week -> date?.let { "Semana ${it.year}-${it.month}" } ?: "Fecha no disponible"
+            HistoryGroup.Month -> date?.let { "${it.year}-${it.month}" } ?: "Fecha no disponible"
         }
     }.map { (key, grouped) ->
         HistoryBucket(

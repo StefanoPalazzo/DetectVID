@@ -22,6 +22,10 @@ const fincaRoutes    = require('./routes/fincaRoutes')
 const app  = express()
 const PORT = process.env.PORT || 3001
 
+// Trust the reverse proxy chain (Nginx/Cloudflare) so rate limiting and secure cookies
+// use the real client IP instead of rejecting X-Forwarded-For.
+app.set('trust proxy', 1)
+
 // ── Middlewares de seguridad ──────────────────────────────────────────────────
 
 // Helmet: agrega headers HTTP de seguridad automáticamente

@@ -36,7 +36,9 @@ Referencia: basado en el patrón CatsDogsDataset del notebook Clase_VC,
 
 import os
 import sys
+import json
 import hashlib
+from datetime import datetime, timezone
 import pandas as pd
 from pathlib import Path
 from typing import Tuple, Dict, List, Optional, Iterable
@@ -53,6 +55,8 @@ from config import (
     AUGMENTATION_CONFIG, BATCH_SIZE, CACHE_DIR,
     DATASET_MODE, SPLIT_MODE, BALANCING_MODE,
     CLASS_TO_IDX_3, CLASS_TO_IDX_4,
+    SPLITS_DIR, SPLIT_VERSION, PERSISTENT_SPLITS_ENABLED,
+    SPLIT_AUDIT_HASH_IMAGES, SPLIT_AUDIT_SIMILAR_IMAGES,
 )
 
 
@@ -761,6 +765,255 @@ def split_dataframe(
     )
 
 
+# ─── Splits persistentes y auditoría anti-leakage ────────────────────────────
+
+def _split_key(dataset_mode: str, split_mode: Optional[str]) -> str:
+    split = split_mode or "none"
+    raw = f"{SPLIT_VERSION}__{dataset_mode}__{split}__seed{RANDOM_SEED}"
+    return "".join(c if c.isalnum() or c in {"_", "-"} else "_" for c in raw)
+
+
+def split_artifact_dir(dataset_mode: str, split_mode: Optional[str]) -> Path:
+    return SPLITS_DIR / _split_key(dataset_mode, split_mode)
+
+
+def _split_csv_columns(df: pd.DataFrame) -> List[str]:
+    preferred = ["image_path", "label", "source", "domain", "split"]
+    return [c for c in preferred if c in df.columns]
+
+
+def _write_split_csvs(split_dir: Path, train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
+    split_dir.mkdir(parents=True, exist_ok=True)
+    for name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        out = split_df.copy()
+        out["split"] = name
+        out[_split_csv_columns(out)].to_csv(split_dir / f"{name}.csv", index=False)
+
+
+def _read_split_csvs(split_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    frames = []
+    for name in ["train", "val", "test"]:
+        path = split_dir / f"{name}.csv"
+        if not path.exists():
+            raise FileNotFoundError(path)
+        df = pd.read_csv(path)
+        df["split"] = name
+        frames.append(df)
+    return frames[0], frames[1], frames[2]
+
+
+def _file_sha256(path: str) -> Optional[str]:
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def _average_hash(path: str) -> Optional[str]:
+    try:
+        img = Image.open(path).convert("L").resize((8, 8))
+        pixels = list(img.getdata())
+        avg = sum(pixels) / len(pixels)
+        bits = "".join("1" if px >= avg else "0" for px in pixels)
+        return f"{int(bits, 2):016x}"
+    except Exception:
+        return None
+
+
+def _deduplicate_exact_images(all_df: pd.DataFrame, reports_dir: Path) -> pd.DataFrame:
+    """Drop exact duplicate image content from the trainable/evaluable manifest.
+
+    Source files are not deleted. We keep one representative row per SHA256 so
+    duplicated downloads do not overweight a visual example or leak into holdouts.
+    """
+    if not SPLIT_AUDIT_HASH_IMAGES:
+        return all_df
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    df = all_df.copy().reset_index(drop=True)
+    df["sha256"] = df["image_path"].astype(str).map(_file_sha256)
+    priority = {"train": 0, "val": 1, "test": 2}
+    df["_split_priority"] = df.get("split", "train").map(lambda s: priority.get(s, 99))
+    df = df.sort_values(["sha256", "_split_priority", "image_path"], na_position="last").reset_index(drop=True)
+
+    duplicated = df[df["sha256"].notna() & df.duplicated("sha256", keep=False)].copy()
+    kept = df[df["sha256"].notna()].drop_duplicates("sha256", keep="first")
+    kept_hashes = set(kept["sha256"].dropna())
+    dropped = duplicated[duplicated.duplicated("sha256", keep="first")].copy()
+
+    duplicated.drop(columns=["_split_priority"], errors="ignore").to_csv(
+        reports_dir / "exact_duplicate_groups_before_dedup.csv", index=False
+    )
+    dropped.drop(columns=["_split_priority"], errors="ignore").to_csv(
+        reports_dir / "dropped_exact_duplicates.csv", index=False
+    )
+
+    deduped = df.drop_duplicates("sha256", keep="first").drop(columns=["sha256", "_split_priority"], errors="ignore")
+    if len(dropped) > 0:
+        print(f"  [Dedup] Ignoradas {len(dropped)} filas duplicadas exactas; no se borraron archivos fuente")
+    return deduped.reset_index(drop=True)
+
+
+def _repair_exact_duplicate_split_leakage(all_df: pd.DataFrame, reports_dir: Path) -> pd.DataFrame:
+    """Move exact duplicate files (same SHA256) into one split before exporting CSVs."""
+    if not SPLIT_AUDIT_HASH_IMAGES:
+        return all_df
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    repaired = all_df.copy().reset_index(drop=True)
+    if "sha256" not in repaired.columns:
+        repaired["sha256"] = repaired["image_path"].astype(str).map(_file_sha256)
+
+    priority = {"train": 0, "val": 1, "test": 2}
+    repairs = []
+    for sha, group in repaired.dropna(subset=["sha256"]).groupby("sha256"):
+        splits = sorted(set(group["split"]), key=lambda s: priority.get(s, 99))
+        if len(splits) <= 1:
+            continue
+        target = splits[0]
+        idxs = group.index.tolist()
+        repairs.append({
+            "sha256": sha,
+            "target_split": target,
+            "previous_splits": ",".join(splits),
+            "rows": len(group),
+            "labels": ",".join(sorted(set(group["label"].astype(str)))),
+            "paths": " | ".join(group["image_path"].astype(str).head(10)),
+        })
+        repaired.loc[idxs, "split"] = target
+
+    pd.DataFrame(repairs).to_csv(reports_dir / "auto_repaired_exact_duplicate_groups.csv", index=False)
+    if repairs:
+        print(f"  [Leakage] Reparados {len(repairs)} grupos de duplicados exactos moviéndolos a un único split")
+    return repaired
+
+
+def _audit_split_leakage(split_dir: Path, all_df: pd.DataFrame) -> Dict:
+    reports_dir = split_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    audit_df = all_df.copy().reset_index(drop=True)
+    audit_df["image_path"] = audit_df["image_path"].astype(str)
+
+    duplicated_paths = audit_df.groupby("image_path").filter(lambda g: g["split"].nunique() > 1)
+    duplicated_paths.to_csv(reports_dir / "path_leakage.csv", index=False)
+
+    exact_duplicates = pd.DataFrame()
+    if SPLIT_AUDIT_HASH_IMAGES:
+        audit_df["sha256"] = audit_df["image_path"].map(_file_sha256)
+        exact_duplicates = audit_df.dropna(subset=["sha256"]).groupby("sha256").filter(lambda g: g["split"].nunique() > 1)
+        exact_duplicates.to_csv(reports_dir / "exact_duplicate_hash_leakage.csv", index=False)
+
+    similar_candidates = pd.DataFrame()
+    if SPLIT_AUDIT_SIMILAR_IMAGES:
+        audit_df["ahash"] = audit_df["image_path"].map(_average_hash)
+        similar_candidates = audit_df.dropna(subset=["ahash"]).groupby("ahash").filter(lambda g: g["split"].nunique() > 1)
+        similar_candidates.to_csv(reports_dir / "similar_ahash_candidates.csv", index=False)
+
+    source_overlap = pd.DataFrame()
+    if "source" in audit_df.columns:
+        source_overlap = audit_df.groupby(["label", "source"])["split"].agg(lambda s: ",".join(sorted(set(s)))).reset_index()
+        source_overlap = source_overlap[source_overlap["split"].str.contains(",")]
+        source_overlap.to_csv(reports_dir / "source_overlap_review.csv", index=False)
+
+    summary = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "path_leakage_rows": int(len(duplicated_paths)),
+        "exact_duplicate_hash_leakage_rows": int(len(exact_duplicates)),
+        "similar_ahash_candidate_rows": int(len(similar_candidates)),
+        "source_overlap_rows": int(len(source_overlap)),
+        "reports_dir": str(reports_dir),
+    }
+    with open(reports_dir / "audit_summary.json", "w") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+    return summary
+
+
+def _dataset_drift_report(split_dir: Path, current_df: pd.DataFrame, persisted_df: pd.DataFrame) -> Dict:
+    current_paths = set(current_df["image_path"].astype(str))
+    persisted_paths = set(persisted_df["image_path"].astype(str))
+    missing_from_csv = sorted(current_paths - persisted_paths)
+    missing_from_disk = sorted(persisted_paths - current_paths)
+    report = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "current_paths": len(current_paths),
+        "persisted_paths": len(persisted_paths),
+        "new_paths_not_in_persisted_split": len(missing_from_csv),
+        "persisted_paths_not_in_current_scan": len(missing_from_disk),
+        "examples_new_paths": missing_from_csv[:20],
+        "examples_missing_paths": missing_from_disk[:20],
+    }
+    with open(split_dir / "dataset_drift_report.json", "w") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    return report
+
+
+def load_or_create_persistent_splits(
+    df_with_split: pd.DataFrame,
+    dataset_mode: str,
+    split_mode: Optional[str],
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict]:
+    split_dir = split_artifact_dir(dataset_mode, split_mode)
+    metadata_path = split_dir / "metadata.json"
+
+    if not PERSISTENT_SPLITS_ENABLED:
+        train_df, val_df, test_df = split_dataframe(df_with_split)
+        return train_df, val_df, test_df, {"persistent": False, "split_dir": None, "split_key": None, "audit": {}, "drift": {}}
+
+    if all((split_dir / f"{name}.csv").exists() for name in ["train", "val", "test"]):
+        train_df, val_df, test_df = _read_split_csvs(split_dir)
+        persisted_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
+        drift = _dataset_drift_report(split_dir, df_with_split, persisted_df)
+        if drift["new_paths_not_in_persisted_split"] or drift["persisted_paths_not_in_current_scan"]:
+            print(f"  ⚠️  Split persistente con drift detectado: {split_dir / 'dataset_drift_report.json'}")
+        audit = {}
+        audit_path = split_dir / "reports" / "audit_summary.json"
+        if audit_path.exists():
+            with open(audit_path) as f:
+                audit = json.load(f)
+        print(f"[Splits] ✓ Usando split persistente: {split_dir}")
+    else:
+        train_df, val_df, test_df = split_dataframe(df_with_split)
+        all_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
+        all_df = _deduplicate_exact_images(all_df, split_dir / "reports")
+        all_df = _repair_exact_duplicate_split_leakage(all_df, split_dir / "reports")
+        train_df, val_df, test_df = split_dataframe(all_df)
+        _write_split_csvs(split_dir, train_df, val_df, test_df)
+        all_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
+        audit = _audit_split_leakage(split_dir, all_df)
+        drift = {}
+        metadata = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "dataset_mode": dataset_mode,
+            "split_mode": split_mode,
+            "random_seed": RANDOM_SEED,
+            "split_version": SPLIT_VERSION,
+            "train_rows": len(train_df),
+            "val_rows": len(val_df),
+            "test_rows": len(test_df),
+            "class_counts": {
+                name: split_df["label"].value_counts().to_dict()
+                for name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]
+            },
+            "audit": audit,
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        print(f"[Splits] ✓ Split persistente creado: {split_dir}")
+
+    return train_df, val_df, test_df, {
+        "persistent": True,
+        "split_dir": str(split_dir),
+        "split_key": split_dir.name,
+        "metadata_path": str(metadata_path),
+        "audit": audit,
+        "drift": drift,
+    }
+
+
 def print_split_stats(
     train_df: pd.DataFrame,
     val_df:   pd.DataFrame,
@@ -1105,14 +1358,18 @@ def get_dataloaders(
     # ── Construir DataFrame según el modo ─────────────────────────────────
     df = build_dataframe_for_experiment(dataset_mode, split_mode)
 
-    # ── Separar splits ────────────────────────────────────────────────────
-    train_df, val_df, test_df = split_dataframe(df)
+    # ── Separar splits persistentes ────────────────────────────────────────
+    # Primer run: crea train.csv/val.csv/test.csv. Runs futuros: leen esos CSV.
+    train_df, val_df, test_df, split_artifacts = load_or_create_persistent_splits(
+        df, dataset_mode=dataset_mode, split_mode=split_mode
+    )
     print_split_stats(train_df, val_df, test_df)
 
     # ── Balanceo ──────────────────────────────────────────────────────────
     if balancing_mode == "undersampled":
-        # Aplicar undersampling sobre el DataFrame completo y re-separar
-        df_balanceado = undersample_majority_class(df, strategy="undersampled")
+        # Aplicar undersampling SOLO sobre train. Val/test quedan intactos.
+        combined = pd.concat([train_df, val_df, test_df], ignore_index=True)
+        df_balanceado = undersample_majority_class(combined, strategy="undersampled")
         train_df, val_df, test_df = split_dataframe(df_balanceado)
         print("\n  Distribución después del undersampling:")
         print_split_stats(train_df, val_df, test_df)
@@ -1167,6 +1424,8 @@ def get_dataloaders(
         "dataset_mode":  dataset_mode,
         "split_mode":    split_mode,
         "balancing_mode": balancing_mode,
+        "split_artifacts": split_artifacts,
+        "random_seed": RANDOM_SEED,
     }
 
     # ── Crear Datasets ────────────────────────────────────────────────────
@@ -1183,9 +1442,20 @@ def get_dataloaders(
     # Con num_workers=0 este parámetro se ignora.
     mp_context = "spawn" if (torch.backends.mps.is_available() and num_workers > 0) else None
 
+    def _seed_worker(worker_id: int) -> None:
+        import random
+        import numpy as np
+        worker_seed = RANDOM_SEED + worker_id
+        random.seed(worker_seed)
+        np.random.seed(worker_seed)
+        torch.manual_seed(worker_seed)
+
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(RANDOM_SEED)
+
     # ── Crear DataLoaders ─────────────────────────────────────────────────
-    # shuffle=True en train → el modelo ve los datos en orden diferente cada época
-    # shuffle=False en val/test → resultados reproducibles
+    # shuffle=True en train, pero con generator fijo para reproducibilidad.
+    # shuffle=False en val/test → resultados reproducibles.
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -1194,6 +1464,8 @@ def get_dataloaders(
         pin_memory=use_pin_memory,
         drop_last=True,  # descarta el último batch incompleto (evita batch de 1-2 imgs)
         multiprocessing_context=mp_context,
+        worker_init_fn=_seed_worker if num_workers > 0 else None,
+        generator=loader_generator,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -1202,6 +1474,7 @@ def get_dataloaders(
         num_workers=num_workers,
         pin_memory=use_pin_memory,
         multiprocessing_context=mp_context,
+        worker_init_fn=_seed_worker if num_workers > 0 else None,
     )
     test_loader = DataLoader(
         test_dataset,
@@ -1210,6 +1483,7 @@ def get_dataloaders(
         num_workers=num_workers,
         pin_memory=use_pin_memory,
         multiprocessing_context=mp_context,
+        worker_init_fn=_seed_worker if num_workers > 0 else None,
     )
 
     print(f"[Dataset] Batches train={len(train_loader)} | val={len(val_loader)} | test={len(test_loader)}")

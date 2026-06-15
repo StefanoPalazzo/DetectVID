@@ -44,10 +44,14 @@ services:
       - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_detectvid}
       - ML_API_URL=http://ml:8000
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - LOCAL_STORAGE_PATH=/app/uploads
+      - LOCAL_STORAGE_URL=${PUBLIC_BASE_URL:-}
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
       - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
       - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
       - FRONTEND_URLS=${FRONTEND_URLS:-http://localhost}
+    volumes:
+      - backend_uploads:/app/uploads
     depends_on:
       - db
       - ml
@@ -73,3 +77,4 @@ networks:
 
 volumes:
   postgres_data:
+  backend_uploads:

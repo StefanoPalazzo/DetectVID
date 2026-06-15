@@ -1,0 +1,6 @@
+platform :ios, '14.1'
+use_frameworks!
+
+target 'iosApp' do
+  pod 'composeApp', :path => '../../../composeApp/build/cocoapods/publish/release'
+end

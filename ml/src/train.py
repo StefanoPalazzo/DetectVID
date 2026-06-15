@@ -39,6 +39,7 @@ import sys
 import os
 import time
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -69,6 +70,10 @@ from config import (
 )
 from dataset import get_dataloaders
 from model import build_model
+from experiment_tracking import (
+    now_iso, plot_training_curves, save_confusion_matrix_artifacts,
+    save_json, upsert_experiment_summary, selection_score,
+)
 
 
 # ─── W&B — importación opcional ──────────────────────────────────────────────
@@ -90,13 +95,19 @@ except ImportError:
 def set_seed(seed: int = RANDOM_SEED) -> None:
     import random
     import numpy as np
+
+    os.environ.setdefault("PYTHONHASHSEED", str(seed))
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # cuDNN: selecciona el algoritmo más rápido para cada operación
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False
+    try:
+        torch.use_deterministic_algorithms(True, warn_only=True)
+    except Exception:
+        pass
 
 
 # ─── AMP (Automatic Mixed Precision) ─────────────────────────────────────────
@@ -262,6 +273,78 @@ def validate(
     return running_loss / total, correct / total
 
 
+
+
+@torch.no_grad()
+def evaluate_loader_metrics(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: str,
+    num_classes: int,
+) -> Dict:
+    """Evaluate a split without updating weights. Used for validation artifacts."""
+    model.eval()
+    all_preds = []
+    all_labels = []
+    all_probs = []
+    running_loss = 0.0
+    total = 0
+
+    for images, labels in loader:
+        images = images.to(device, non_blocking=True)
+        labels_device = labels.to(device, non_blocking=True)
+        with torch.autocast(device_type=str(device).split(":")[0], enabled=(device != "cpu")):
+            outputs = model(images)
+            loss = criterion(outputs, labels_device)
+        probs = torch.softmax(outputs, dim=1)
+        preds = probs.argmax(dim=1)
+        running_loss += loss.item() * labels.size(0)
+        total += labels.size(0)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.numpy())
+        all_probs.extend(probs.cpu().numpy())
+
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    all_probs = np.array(all_probs)
+
+    precision, recall, f1, support = precision_recall_fscore_support(
+        all_labels, all_preds, average=None, labels=list(range(num_classes)), zero_division=0
+    )
+    precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
+        all_labels, all_preds, average="macro", zero_division=0
+    )
+    cm = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
+    acc = float((all_preds == all_labels).mean()) if len(all_labels) else 0.0
+
+    try:
+        roc_auc = roc_auc_score(all_labels, all_probs, multi_class="ovr", average="macro") if num_classes > 2 else roc_auc_score(all_labels, all_probs[:, 1])
+    except Exception:
+        roc_auc = None
+
+    return {
+        "loss": float(running_loss / total) if total else 0.0,
+        "accuracy": acc,
+        "precision_macro": float(precision_macro),
+        "recall_macro": float(recall_macro),
+        "f1_macro": float(f1_macro),
+        "roc_auc_macro_ovr": None if roc_auc is None else float(roc_auc),
+        "per_class": {
+            str(i): {
+                "precision": float(precision[i]),
+                "recall": float(recall[i]),
+                "f1": float(f1[i]),
+                "support": int(support[i]),
+            }
+            for i in range(num_classes)
+        },
+        "confusion_matrix": cm,
+        "y_true": all_labels,
+        "y_pred": all_preds,
+    }
+
+
 # ─── Early Stopping ───────────────────────────────────────────────────────────
 
 class EarlyStopping:
@@ -303,6 +386,7 @@ def train(
     learning_rate:  float         = LEARNING_RATE,
     device:         str           = DEVICE,
     wandb_enabled:  bool          = True,
+    evaluate_test:  bool          = False,
 ) -> Dict:
     """
     Loop de entrenamiento principal con soporte W&B.
@@ -359,6 +443,8 @@ def train(
                     "num_classes":      num_classes,
                     "augmentation":     AUGMENTATION_CONFIG,
                     "device":           str(device),
+                    "random_seed":      RANDOM_SEED,
+                    "evaluate_test":    evaluate_test,
                 },
                 tags=[
                     model_name,
@@ -530,6 +616,8 @@ def train(
                     "balancing_mode":   balancing_mode,
                     "num_classes":      num_classes,
                     "experiment_id":    experiment_id,
+                    "random_seed":      RANDOM_SEED,
+                    "split_artifacts":  split_info.get("split_artifacts", {}),
                 },
                 checkpoint_path,
             )
@@ -574,6 +662,11 @@ def train(
             "val_loss":         val_loss,
             "val_acc":          val_acc,
             "model_name":       model_name,
+            "dataset_mode":     dataset_mode,
+            "split_mode":       split_mode,
+            "balancing_mode":   balancing_mode,
+            "num_classes":      num_classes,
+            "random_seed":      RANDOM_SEED,
             "experiment_id":    experiment_id,
         },
         last_checkpoint_path,
@@ -588,96 +681,127 @@ def train(
     print(f"  Checkpoint     : {CHECKPOINTS_DIR / (experiment_id + '_best.pth')}")
     print(f"{'═'*70}\n")
 
-    # ── Evaluación final en test set ──────────────────────────────────────────
-    print("\n[Test] Evaluando modelo final en test set...")
+    # ── Evaluación final sobre VALIDATION ─────────────────────────────────────
+    # Para selección de modelo NO usamos test. El test queda reservado para la
+    # evaluación final del modelo elegido.
+    print("\n[Validation] Evaluando mejor checkpoint en validation set...")
     best_checkpoint = CHECKPOINTS_DIR / f"{experiment_id}_best.pth"
+    best_epoch = None
     if best_checkpoint.exists():
-        checkpoint = torch.load(best_checkpoint, map_location=DEVICE)
+        checkpoint = torch.load(best_checkpoint, map_location=DEVICE, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
-        print(f"  Cargado mejor checkpoint: época {checkpoint['epoch']}")
+        best_epoch = checkpoint.get("epoch")
+        print(f"  Cargado mejor checkpoint: época {best_epoch}")
 
-    model.eval()
-    all_preds   = []
-    all_labels  = []
-    all_probs   = []  # probabilidades por clase para ROC
+    val_metrics = evaluate_loader_metrics(model, val_loader, criterion, DEVICE, num_classes)
+    class_names = [split_info["idx_to_class"][i] for i in range(num_classes)]
 
-    with torch.no_grad():
-        for images, labels in test_loader:
-            images = images.to(DEVICE)
-            with torch.autocast(device_type=DEVICE.split(":")[0], enabled=(DEVICE != "cpu")):
-                outputs = model(images)
-            probs = torch.softmax(outputs, dim=1)
-            preds = probs.argmax(dim=1)
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.numpy())
-            all_probs.extend(probs.cpu().numpy())
+    print(f"\n  Val loss      : {val_metrics['loss']:.4f}")
+    print(f"  Val accuracy  : {val_metrics['accuracy']:.4f}")
+    print(f"  Val F1 macro  : {val_metrics['f1_macro']:.4f}")
 
-    all_preds  = np.array(all_preds)
-    all_labels = np.array(all_labels)
-    all_probs  = np.array(all_probs)
+    test_metrics = None
+    if evaluate_test:
+        print("\n[Test] Evaluando TEST set porque evaluate_test=True...")
+        test_metrics = evaluate_loader_metrics(model, test_loader, criterion, DEVICE, num_classes)
+        print(f"  Test accuracy : {test_metrics['accuracy']:.4f}")
+        print(f"  Test F1 macro : {test_metrics['f1_macro']:.4f}")
+    else:
+        print("\n[Test] Omitido: el test queda reservado para la evaluación final del modelo seleccionado.")
 
-    # Métricas por clase
-    precision, recall, f1, support = precision_recall_fscore_support(
-        all_labels, all_preds, average=None, zero_division=0
+    # ── Artefactos locales del experimento ───────────────────────────────────
+    history_path = RESULTS_DIR / f"{experiment_id}_history.json"
+    curves_path = RESULTS_DIR / f"{experiment_id}_training_curves.png"
+    val_cm_csv = RESULTS_DIR / f"{experiment_id}_val_confusion_matrix.csv"
+    val_cm_png = RESULTS_DIR / f"{experiment_id}_val_confusion_matrix.png"
+    metrics_path = RESULTS_DIR / f"{experiment_id}_metrics.json"
+    metadata_path = RESULTS_DIR / f"{experiment_id}_metadata.json"
+
+    plot_training_curves(history, curves_path, title=experiment_id)
+    save_confusion_matrix_artifacts(
+        val_metrics["confusion_matrix"],
+        class_names,
+        val_cm_csv,
+        val_cm_png,
+        title=f"{experiment_id} — validation confusion matrix",
     )
-    precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
-        all_labels, all_preds, average="macro", zero_division=0
-    )
-    test_acc = (all_preds == all_labels).mean()
 
-    print(f"\n  Test accuracy : {test_acc:.4f}")
-    print(f"  F1 macro      : {f1_macro:.4f}")
-    print(f"  Precision macro: {precision_macro:.4f}")
-    print(f"  Recall macro   : {recall_macro:.4f}")
-    print("\n" + classification_report(all_labels, all_preds, zero_division=0))
+    best_idx = int(np.argmin(history["val_loss"])) if history["val_loss"] else 0
+    best_train_loss = history["train_loss"][best_idx] if history["train_loss"] else None
+    best_train_acc = history["train_acc"][best_idx] if history["train_acc"] else None
+    best_gap = (best_val_loss - best_train_loss) if best_train_loss is not None else None
 
-    # ROC AUC (OvR multiclass)
-    try:
-        if num_classes == 2:
-            roc_auc = roc_auc_score(all_labels, all_probs[:, 1])
-        else:
-            roc_auc = roc_auc_score(all_labels, all_probs, multi_class="ovr", average="macro")
-    except Exception:
-        roc_auc = None
+    metrics_payload = {
+        "validation": {k: v for k, v in val_metrics.items() if k not in {"confusion_matrix", "y_true", "y_pred"}},
+        "test": None if test_metrics is None else {k: v for k, v in test_metrics.items() if k not in {"confusion_matrix", "y_true", "y_pred"}},
+    }
+    save_json(metrics_path, metrics_payload)
 
-    # Loguear todo a W&B
+    summary_row = {
+        "experiment_id": experiment_id,
+        "created_at": now_iso(),
+        "random_seed": RANDOM_SEED,
+        "model_name": model_name,
+        "dataset_mode": dataset_mode,
+        "split_mode": split_mode or "none",
+        "balancing_mode": balancing_mode,
+        "num_epochs_configured": num_epochs,
+        "epochs_ran": last_epoch,
+        "best_epoch": best_epoch or int(np.argmin(history["val_loss"]) + 1),
+        "best_val_loss": float(best_val_loss),
+        "best_val_acc": float(best_val_acc),
+        "best_train_loss": None if best_train_loss is None else float(best_train_loss),
+        "best_train_acc": None if best_train_acc is None else float(best_train_acc),
+        "best_generalization_gap": None if best_gap is None else float(best_gap),
+        "val_loss_recomputed": float(val_metrics["loss"]),
+        "val_acc_recomputed": float(val_metrics["accuracy"]),
+        "val_f1_macro": float(val_metrics["f1_macro"]),
+        "val_precision_macro": float(val_metrics["precision_macro"]),
+        "val_recall_macro": float(val_metrics["recall_macro"]),
+        "val_roc_auc_macro_ovr": val_metrics.get("roc_auc_macro_ovr"),
+        "checkpoint_best": str(best_checkpoint),
+        "checkpoint_last": str(last_checkpoint_path),
+        "history_path": str(history_path),
+        "curves_path": str(curves_path),
+        "val_confusion_matrix_csv": str(val_cm_csv),
+        "val_confusion_matrix_png": str(val_cm_png),
+        "metrics_path": str(metrics_path),
+        "metadata_path": str(metadata_path),
+        "split_dir": split_info.get("split_artifacts", {}).get("split_dir"),
+        "split_key": split_info.get("split_artifacts", {}).get("split_key"),
+    }
+    summary_row["selection_score"] = selection_score(summary_row)
+
+    metadata_payload = {
+        "experiment": summary_row,
+        "config": {
+            "augmentation": AUGMENTATION_CONFIG,
+            "batch_size": batch_size,
+            "learning_rate": learning_rate,
+            "weight_decay": WEIGHT_DECAY,
+            "label_smoothing": LABEL_SMOOTHING,
+            "early_stopping_patience": EARLY_STOPPING_PATIENCE,
+            "early_stopping_delta": EARLY_STOPPING_DELTA,
+            "lr_scheduler_patience": LR_SCHEDULER_PATIENCE,
+            "lr_scheduler_factor": LR_SCHEDULER_FACTOR,
+            "freeze_backbone": FREEZE_BACKBONE,
+            "device": str(device),
+        },
+        "split_artifacts": split_info.get("split_artifacts", {}),
+        "class_counts": split_info.get("class_counts", {}),
+        "class_to_idx": split_info.get("class_to_idx", {}),
+    }
+    save_json(metadata_path, metadata_payload)
+    upsert_experiment_summary(RESULTS_DIR / "experiment_summary.csv", summary_row)
+
     if _wandb_activo:
         try:
-            # Métricas escalares
-            wandb.summary["test_acc"]        = float(test_acc)
-            wandb.summary["test_f1_macro"]   = float(f1_macro)
-            wandb.summary["test_precision"]  = float(precision_macro)
-            wandb.summary["test_recall"]     = float(recall_macro)
-            if roc_auc is not None:
-                wandb.summary["test_roc_auc"] = float(roc_auc)
-
-            # Métricas por clase
-            class_names = list(range(num_classes))
-            for i, name in enumerate(class_names):
-                wandb.summary[f"test_f1_cls{name}"]        = float(f1[i])
-                wandb.summary[f"test_precision_cls{name}"] = float(precision[i])
-                wandb.summary[f"test_recall_cls{name}"]    = float(recall[i])
-
-            # Matriz de confusión como imagen W&B
-            cm = confusion_matrix(all_labels, all_preds)
-            wandb.log({
-                "test/confusion_matrix": wandb.plot.confusion_matrix(
-                    probs=None,
-                    y_true=all_labels.tolist(),
-                    preds=all_preds.tolist(),
-                    class_names=[str(i) for i in range(num_classes)],
-                ),
-                "test/acc":       float(test_acc),
-                "test/f1_macro":  float(f1_macro),
-                "test/precision": float(precision_macro),
-                "test/recall":    float(recall_macro),
-            })
-            if roc_auc is not None:
-                wandb.log({"test/roc_auc": float(roc_auc)})
-
-            print("[W&B] ✓ Métricas de test logueadas")
+            wandb.summary["val_f1_macro"] = float(val_metrics["f1_macro"])
+            wandb.summary["val_precision_macro"] = float(val_metrics["precision_macro"])
+            wandb.summary["val_recall_macro"] = float(val_metrics["recall_macro"])
+            wandb.summary["selection_score"] = float(summary_row["selection_score"])
         except Exception as e:
-            print(f"[W&B] ⚠️  Error al loguear métricas de test: {e}")
+            print(f"[W&B] ⚠️  Error al loguear métricas de validation: {e}")
 
     # ── Summary de W&B ────────────────────────────────────────────────────
     if _wandb_activo:

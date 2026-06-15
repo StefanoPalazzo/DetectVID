@@ -22,17 +22,23 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.refTo
 import kotlinx.cinterop.readValue
+import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import platform.Foundation.*
 import platform.UIKit.UIApplication
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageJPEGRepresentation
+import platform.UIKit.UIGraphicsBeginImageContextWithOptions
+import platform.UIKit.UIGraphicsEndImageContext
+import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
 import platform.UIKit.UIImagePickerController
 import platform.UIKit.UIImagePickerControllerDelegateProtocol
 import platform.UIKit.UIImagePickerControllerOriginalImage
 import platform.UIKit.UIImagePickerControllerSourceType
 import platform.UIKit.UINavigationControllerDelegateProtocol
 import platform.WebKit.WKWebView
+import platform.CoreGraphics.CGRectMake
+import platform.CoreGraphics.CGSizeMake
 import platform.WebKit.WKWebViewConfiguration
 import platform.darwin.NSObject
 import platform.posix.memcpy
@@ -138,7 +144,7 @@ private class IosPickerDelegate(
         didFinishPickingMediaWithInfo: Map<Any?, *>,
     ) {
         val image = didFinishPickingMediaWithInfo[UIImagePickerControllerOriginalImage] as? UIImage
-        val bytes = image?.let { UIImageJPEGRepresentation(it, 0.92)?.toByteArray() }
+        val bytes = image?.optimizedJpegBytes()
         picker.dismissViewControllerAnimated(true, completion = null)
         continuation.resume(
             bytes?.let {
@@ -153,11 +159,36 @@ private class IosPickerDelegate(
     }
 }
 
+@OptIn(ExperimentalForeignApi::class)
+private fun UIImage.optimizedJpegBytes(maxDimension: Double = 1600.0, quality: Double = 0.82): ByteArray? {
+    val (originalWidth, originalHeight) = size.useContents { width to height }
+    val largestSide = maxOf(originalWidth, originalHeight)
+    val scale = if (largestSide > maxDimension) maxDimension / largestSide else 1.0
+    val imageForEncoding = if (scale < 1.0) {
+        val targetWidth = (originalWidth * scale).coerceAtLeast(1.0)
+        val targetHeight = (originalHeight * scale).coerceAtLeast(1.0)
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(targetWidth, targetHeight), false, 1.0)
+        drawInRect(CGRectMake(0.0, 0.0, targetWidth, targetHeight))
+        val resized = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        resized ?: this
+    } else {
+        this
+    }
+    return UIImageJPEGRepresentation(imageForEncoding, quality)?.toByteArray()
+}
+
 actual fun platformHttpClient(): HttpClient = HttpClient(Darwin)
 
 actual fun currentTimeMillis(): Long = (NSDate().timeIntervalSince1970 * 1000).toLong()
 
-actual fun nowIsoString(): String = NSDate().description ?: currentTimeMillis().toString()
+actual fun nowIsoString(): String {
+    val formatter = NSDateFormatter()
+    formatter.locale = NSLocale(localeIdentifier = "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    formatter.timeZone = NSTimeZone.timeZoneForSecondsFromGMT(0)
+    return formatter.stringFromDate(NSDate())
+}
 
 @Composable
 actual fun AnalysisImagePreview(localImagePath: String?, remoteImageUrl: String?, contentDescription: String?, modifier: Modifier) {

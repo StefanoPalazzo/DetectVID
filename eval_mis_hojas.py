@@ -72,7 +72,7 @@ def predict_image(image_path: Path, model, transform, device: str) -> dict:
 
 
 # ── Evaluación ─────────────────────────────────────────────────────────────────
-def evaluate(folder: Path, model, transform, label: str = "ORIGINAL"):
+def evaluate(folder: Path, model, transform, checkpoint_name: str, label: str = "ORIGINAL"):
     VALID_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
     images = sorted(f for f in folder.iterdir() if f.suffix.lower() in VALID_EXT)
 
@@ -83,7 +83,7 @@ def evaluate(folder: Path, model, transform, label: str = "ORIGINAL"):
 
     print(f"\n{'═'*70}")
     print(f"  DetectVID — Evaluación [{label}]  ({len(images)} imágenes)")
-    print(f"  Modelo: {BEST_MODEL_PATH.name}")
+    print(f"  Modelo: {checkpoint_name}")
     print(f"  Carpeta: {folder}")
     print(f"{'═'*70}\n")
 
@@ -174,11 +174,11 @@ def main():
     transform = build_transform()
 
     # Evaluación 1: imágenes originales
-    results_orig, acc_orig = evaluate(MIS_HOJAS_DIR, model, transform, label="ORIGINAL")
+    results_orig, acc_orig = evaluate(MIS_HOJAS_DIR, model, transform, ckpt_path.name, label="ORIGINAL")
 
     # Evaluación 2: imágenes croppeadas (si existen)
     if CROPPED_DIR.exists() and any(CROPPED_DIR.iterdir()):
-        results_crop, acc_crop = evaluate(CROPPED_DIR, model, transform, label="CROPPED")
+        results_crop, acc_crop = evaluate(CROPPED_DIR, model, transform, ckpt_path.name, label="CROPPED")
         delta = acc_crop - acc_orig
         sign  = "+" if delta >= 0 else ""
         print(f"\n{'═'*70}")

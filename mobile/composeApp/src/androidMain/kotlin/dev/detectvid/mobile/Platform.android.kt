@@ -1,6 +1,7 @@
 package dev.detectvid.mobile.platform
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.webkit.WebView
@@ -32,9 +33,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URL
 import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 
 @Composable
 actual fun rememberPlatformFileSystem(): PlatformFileSystem {
@@ -83,11 +86,7 @@ actual fun rememberPhotoSource(): PhotoSource {
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val file = pendingCameraFile
         val image = if (success && file != null && file.exists()) {
-            PickedImage(
-                bytes = file.readBytes(),
-                fileName = file.name,
-                mimeType = "image/jpeg",
-            )
+            optimizeImageForUpload(file.readBytes(), file.name)
         } else null
         cameraContinuation?.resume(image)
         cameraContinuation = null
@@ -117,10 +116,49 @@ private fun Uri.toPickedImage(context: Context): PickedImage? = runCatching {
     val resolver = context.contentResolver
     val mimeType = resolver.getType(this) ?: "image/jpeg"
     val bytes = resolver.openInputStream(this)?.use { it.readBytes() } ?: return null
-    PickedImage(
+    optimizeImageForUpload(
         bytes = bytes,
         fileName = lastPathSegment?.substringAfterLast('/') ?: "leaf-${System.currentTimeMillis()}.jpg",
-        mimeType = mimeType,
+    )
+}.getOrNull()
+
+private const val MaxUploadImageSide = 1600
+
+private fun optimizeImageForUpload(bytes: ByteArray, fileName: String): PickedImage? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching PickedImage(bytes, fileName, "image/jpeg")
+
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > MaxUploadImageSide * 2 || bounds.outHeight / sampleSize > MaxUploadImageSide * 2) {
+        sampleSize *= 2
+    }
+
+    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        ?: return@runCatching PickedImage(bytes, fileName, "image/jpeg")
+
+    val scale = minOf(1f, MaxUploadImageSide.toFloat() / maxOf(decoded.width, decoded.height).toFloat())
+    val bitmap = if (scale < 1f) {
+        Bitmap.createScaledBitmap(
+            decoded,
+            (decoded.width * scale).roundToInt().coerceAtLeast(1),
+            (decoded.height * scale).roundToInt().coerceAtLeast(1),
+            true,
+        )
+    } else {
+        decoded
+    }
+
+    val output = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)
+    if (bitmap !== decoded) bitmap.recycle()
+    decoded.recycle()
+
+    PickedImage(
+        bytes = output.toByteArray(),
+        fileName = fileName.substringBeforeLast('.', fileName) + ".jpg",
+        mimeType = "image/jpeg",
     )
 }.getOrNull()
 

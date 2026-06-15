@@ -152,8 +152,21 @@ TRAIN_RATIO = 0.70
 VAL_RATIO   = 0.15
 TEST_RATIO  = 0.15
 
-# Semilla fija para reproducibilidad — misma semilla = mismos splits siempre
+# Semilla fija global para reproducibilidad.
+# Esta semilla debe quedar registrada en cada experimento y en los splits exportados.
 RANDOM_SEED = 42
+
+# Splits persistentes: todos los experimentos con el mismo dataset_mode/split_mode
+# leen los mismos CSV en vez de volver a dividir aleatoriamente.
+SPLITS_DIR = PROJECT_ROOT / "splits"
+SPLIT_VERSION = "v3"
+PERSISTENT_SPLITS_ENABLED = True
+
+# Auditoría liviana de leakage al crear splits.
+# - SHA256 detecta archivos idénticos aunque tengan nombres distintos.
+# - aHash detecta candidatos visualmente muy parecidos.
+SPLIT_AUDIT_HASH_IMAGES = True
+SPLIT_AUDIT_SIMILAR_IMAGES = True
 
 # ─── Modelo ──────────────────────────────────────────────────────────────────
 #

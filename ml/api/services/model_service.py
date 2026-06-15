@@ -19,8 +19,6 @@ Interfaz mínima que cualquier implementación debe cumplir:
 
 import sys
 import io
-import tempfile
-import os
 from pathlib import Path
 
 # Agregar src/ al path para importar los módulos ML existentes
@@ -28,11 +26,15 @@ ML_ROOT = Path(__file__).parent.parent.parent   # ml/
 sys.path.insert(0, str(ML_ROOT / "src"))
 
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
+from torchvision import transforms
+import torch.nn.functional as F
 
-from config import DEVICE, MODEL_NAME, BEST_MODEL_PATH
+from config import DEVICE, MODEL_NAME, BEST_MODEL_PATH, INPUT_SIZE, IMAGENET_MEAN, IMAGENET_STD, IDX_TO_CLASS, CLASS_DISPLAY_NAMES
 from model import load_model
-from predict import predict as ml_predict, preprocess_image
+
+UNCERTAIN_CONFIDENCE_THRESHOLD = 0.70
+UNCERTAIN_MARGIN_THRESHOLD = 0.15
 
 
 class PyTorchModelService:
@@ -72,31 +74,57 @@ class PyTorchModelService:
         )
         print(f"[ModelService] ✓ Listo — {self._model_name} en {self._device.upper()}")
 
+    @torch.no_grad()
     def predict(self, image_bytes: bytes) -> dict:
-        """
-        Recibe la imagen como bytes (viene del request HTTP) y devuelve
-        el resultado de clasificación.
+        """Run inference from request bytes without writing temp files.
 
-        Retorna siempre el mismo dict, sin importar el backbone:
-        {
-            "class": "oidio",
-            "display_name": "Oídio (Powdery Mildew)",
-            "confidence": 0.97,
-            "probabilities": {"Sana": 0.01, ...}
+        Phone cameras produce multi-megabyte images, but the model only needs
+        INPUT_SIZE pixels. Downscaling before tensor conversion prevents long
+        CPU-bound requests that can exceed Cloudflare's timeout.
+        """
+        image = Image.open(io.BytesIO(image_bytes))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+
+        transform = transforms.Compose([
+            transforms.Resize(INPUT_SIZE),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ])
+        tensor = transform(image).unsqueeze(0).to(self._device)
+
+        logits = self._model(tensor)
+        probabilities = F.softmax(logits, dim=1).squeeze()
+        sorted_probs, sorted_indices = torch.sort(probabilities, descending=True)
+
+        pred_idx = sorted_indices[0].item()
+        pred_class = IDX_TO_CLASS[pred_idx]
+        confidence = sorted_probs[0].item()
+        runner_up_confidence = sorted_probs[1].item() if len(sorted_probs) > 1 else 0.0
+        top1_margin = confidence - runner_up_confidence
+        is_uncertain = (
+            confidence < UNCERTAIN_CONFIDENCE_THRESHOLD
+            or top1_margin < UNCERTAIN_MARGIN_THRESHOLD
+        )
+
+        prob_dict = {
+            CLASS_DISPLAY_NAMES[IDX_TO_CLASS[i]]: probabilities[i].item()
+            for i in range(len(IDX_TO_CLASS))
         }
-        """
-        # Guardar bytes en un archivo temporal para reutilizar preprocess_image()
-        # que ya existe en predict.py — no duplicamos lógica.
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp.write(image_bytes)
-            tmp_path = tmp.name
 
-        try:
-            result = ml_predict(tmp_path, model=self._model, device=self._device)
-        finally:
-            os.unlink(tmp_path)
-
-        return result
+        return {
+            "class": pred_class,
+            "display_name": CLASS_DISPLAY_NAMES[pred_class],
+            "confidence": confidence,
+            "top1_margin": top1_margin,
+            "is_uncertain": is_uncertain,
+            "decision_status": "uncertain" if is_uncertain else "accepted",
+            "thresholds": {
+                "confidence": UNCERTAIN_CONFIDENCE_THRESHOLD,
+                "margin": UNCERTAIN_MARGIN_THRESHOLD,
+            },
+            "probabilities": prob_dict,
+        }
 
     def is_loaded(self) -> bool:
         return self._model is not None
