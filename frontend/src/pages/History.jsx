@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ClipboardList, ScanLine, ArrowRight, Trash2, MapPin,
-  X, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Calendar,
+  X, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Calendar, Filter,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {
@@ -30,6 +30,7 @@ import {
 import { es } from 'date-fns/locale'
 
 import { getAnalyses, deleteAnalysis, deleteAnalyses } from '../services/analysisService'
+import { HISTORY_FILTERS, filterAnalyses } from '../utils/analysisMetrics'
 
 // ── Mapa de colores por nivel de riesgo ──────────────────────────────────────
 const RISK_COLORS = {
@@ -385,6 +386,7 @@ export default function History() {
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState(null)
   const [groupMode, setGroupMode]       = useState('day')
+  const [activeFilter, setActiveFilter] = useState('all')
   const [photoModal, setPhotoModal]     = useState(null)   // analysis | null
   const [confirmPending, setConfirmPending] = useState(null) // { ids: [] } | null
 
@@ -448,7 +450,8 @@ export default function History() {
   }, [])
 
   // ── Grupos calculados ────────────────────────────────────────────────────────
-  const groups = groupAnalyses(analyses, groupMode)
+  const filteredAnalyses = filterAnalyses(analyses, activeFilter)
+  const groups = groupAnalyses(filteredAnalyses, groupMode)
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -470,7 +473,7 @@ export default function History() {
         {!loading && !error && analyses.length > 0 && (
           <span className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm font-medium px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 flex-shrink-0">
             <Calendar size={13} />
-            {analyses.length} {analyses.length === 1 ? 'análisis' : 'análisis'}
+            {filteredAnalyses.length} de {analyses.length}
           </span>
         )}
       </div>
@@ -533,8 +536,39 @@ export default function History() {
           animate={{ opacity: 1 }}
           className="space-y-4"
         >
+          {/* Filtros por diagnóstico */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-500 mr-1">
+              <Filter size={13} /> Filtrar
+            </span>
+            {HISTORY_FILTERS.map(filter => {
+              const count = filter.id === 'all' ? analyses.length : filterAnalyses(analyses, filter.id).length
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id)}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                    activeFilter === filter.id
+                      ? 'bg-emerald-700 text-white border-emerald-700 shadow-sm'
+                      : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800 hover:border-emerald-500/50'
+                  )}
+                >
+                  {filter.label} <span className="opacity-70">{count}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {filteredAnalyses.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-6 py-10 text-center">
+              <p className="text-gray-900 dark:text-white font-semibold">No hay análisis para este filtro</p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Probá con otro estado sanitario o cargá un nuevo análisis.</p>
+            </div>
+          )}
+
           {/* Tabs de agrupación */}
-          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800/60 p-1 rounded-xl w-fit">
+          {filteredAnalyses.length > 0 && <div className="flex gap-1 bg-gray-100 dark:bg-gray-800/60 p-1 rounded-xl w-fit">
             {GROUP_TABS.map(tab => (
               <button
                 key={tab.id}
@@ -549,10 +583,10 @@ export default function History() {
                 {tab.label}
               </button>
             ))}
-          </div>
+          </div>}
 
           {/* Grupos */}
-          <div className="space-y-4">
+          {filteredAnalyses.length > 0 && <div className="space-y-4">
             {groups.map(group => (
               <GroupCard
                 key={group.key}
@@ -561,7 +595,7 @@ export default function History() {
                 onDelete={handleDeleteRequest}
               />
             ))}
-          </div>
+          </div>}
         </motion.div>
       )}
 

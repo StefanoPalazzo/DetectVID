@@ -1,215 +1,187 @@
-# 🍇 DetectVID — Sistema de Detección Inteligente de Enfermedades en Vid
+# DetectVID — detección inteligente de enfermedades en vid
 
-> Proyecto de Tesis | Universidad de Mendoza | Stefano Palazzo | 2026
+DetectVID es una plataforma AgriTech para monitorear viñedos mediante análisis de imágenes de hojas de vid. Permite subir/capturar una foto, ejecutar inferencia con un modelo de visión computacional, guardar el diagnóstico, revisar historial, ver métricas y ubicar análisis/fincas en un mapa.
 
----
+Proyecto de tesis — Universidad de Mendoza — Stefano Palazzo.
 
-## 🌿 ¿Qué es DetectVID?
+## Estado del MVP
 
-DetectVID es una aplicación de **agricultura de precisión** que permite detectar enfermedades en plantas de vid mediante inteligencia artificial. El usuario sube una fotografía de una hoja y el sistema devuelve un diagnóstico con nivel de confianza, riesgo y recomendación agronómica.
+El MVP actual incluye:
 
-**Enfermedades detectables (v1.0 Mock → modelo real en desarrollo):**
-- 🔴 Oídio (*Uncinula necator*)
-- 🔴 Peronóspora (*Plasmopara viticola*)
-- 🟡 Podredumbre Gris / Botrytis (*Botrytis cinerea*)
-- 🟢 Hoja Sana
-- ⚫ No concluyente
+- Autenticación con JWT en cookie HttpOnly.
+- Frontend web React/Vite protegido por sesión.
+- Backend Express + Prisma + PostgreSQL.
+- API ML FastAPI/PyTorch reemplazable por otro motor de inferencia.
+- Subida de imágenes con validación y storage local persistente o Cloudinary.
+- Historial con miniaturas, filtros, agrupación por día/semana/mes y borrado.
+- Dashboard con métricas calculadas desde análisis reales.
+- Mapa Leaflet con fincas/polígonos y puntos GPS de análisis.
+- App mobile Kotlin Multiplatform con flujo offline-first y sincronización.
+- Docker Compose para VM/local.
 
----
+## Stack
 
-## 🚀 Inicio rápido
+| Capa | Tecnología |
+|---|---|
+| Web | React 18, Vite 5, Tailwind CSS, React Router, Framer Motion, Leaflet |
+| Backend | Node.js 20, Express, Prisma, PostgreSQL, JWT, bcrypt, multer |
+| ML API | Python 3.10, FastAPI, PyTorch, torchvision, Pillow |
+| Mobile | Kotlin Multiplatform, Compose Multiplatform, Android/iOS shell |
+| Deploy | Docker Compose, Nginx reverse proxy |
+
+## Estructura
+
+```text
+DetectVID/
+├── frontend/          # SPA web React + Nginx config
+├── backend/           # API Express, auth, análisis, fincas, Prisma
+├── ml/                # Entrenamiento, evaluación y API FastAPI de inferencia
+├── mobile/            # App KMP Android/iOS offline-first
+├── docs/              # Arquitectura y despliegue
+├── docker-compose.yml # Stack local/VM
+└── .env.example       # Variables para Docker/VM
+```
+
+## Variables de entorno
+
+Para Docker/VM:
 
 ```bash
-# 1. Clonar / entrar al directorio
-cd DetectVID
+cp .env.example .env
+```
 
-# 2. Instalar dependencias
+Variables principales:
+
+| Variable | Uso |
+|---|---|
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Base PostgreSQL |
+| `JWT_SECRET` | Firma JWT; usar un valor largo y aleatorio |
+| `PUBLIC_BASE_URL` | URL pública usada para imágenes locales, ej. `https://detectvid.example.com` |
+| `FRONTEND_URLS` | Orígenes CORS permitidos separados por coma |
+| `STORAGE_PROVIDER` | `local` para VM, `cloudinary` opcional |
+
+Para desarrollo backend puro:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+## Ejecutar con Docker
+
+```bash
+docker compose up -d --build
+```
+
+Servicios:
+
+- Frontend/Nginx: http://localhost
+- Backend health: http://localhost/api/auth/me requiere sesión; health directo dentro de red: `backend:3001/health`
+- ML health vía proxy: http://localhost/api/ml/health
+- PostgreSQL: contenedor interno `db`
+
+Ver logs:
+
+```bash
+docker compose logs -f
+```
+
+Detener:
+
+```bash
+docker compose down
+```
+
+## Ejecutar en desarrollo local
+
+### Backend
+
+```bash
+cd backend
 npm install
-
-# 3. Iniciar servidor de desarrollo
+cp .env.example .env
+npm run db:generate
+npm run db:migrate
+npm run db:seed
 npm run dev
 ```
 
-Abrí http://localhost:5173 en el browser.
+Backend: http://localhost:3001
 
----
-
-## 📦 Stack tecnológico
-
-| Herramienta        | Versión  | Propósito                              |
-|--------------------|----------|----------------------------------------|
-| React              | 18.x     | UI declarativa basada en componentes   |
-| Vite               | 5.x      | Bundler ultrarrápido + dev server      |
-| Tailwind CSS       | 3.x      | Estilos utilitarios                    |
-| React Router DOM   | 6.x      | Navegación SPA (Single Page App)       |
-| Framer Motion      | 11.x     | Animaciones declarativas               |
-| Lucide React       | 0.344.x  | Íconos SVG                             |
-| clsx               | 2.x      | Composición condicional de clases CSS  |
-
----
-
-## 🗂 Estructura del proyecto
-
-```
-src/
-├── components/
-│   ├── layout/
-│   │   ├── MainLayout.jsx    ← Estructura principal: sidebar + header + content + footer
-│   │   ├── Sidebar.jsx       ← Navegación lateral con NavLinks
-│   │   ├── Header.jsx        ← Barra superior con título de página
-│   │   └── Footer.jsx        ← Pie académico
-│   └── analysis/
-│       ├── UploadZone.jsx    ← Drag & drop de imágenes
-│       ├── ImagePreview.jsx  ← Preview + metadata del archivo
-│       ├── AnalysisLoader.jsx ← Animación de procesamiento IA
-│       └── ResultsCard.jsx   ← Tarjeta de resultados completa
-├── context/
-│   └── AnalysisContext.jsx   ← Estado global con Context API + useReducer
-├── pages/
-│   ├── Home.jsx              ← Página de inicio
-│   ├── Analyze.jsx           ← MVP principal (flujo completo)
-│   ├── History.jsx           ← Historial (placeholder v2.0)
-│   ├── Dashboard.jsx         ← Dashboard analítico (placeholder v2.0)
-│   ├── VineyardMap.jsx       ← Mapa GPS (placeholder v3.0)
-│   └── Settings.jsx          ← Configuración
-├── services/
-│   └── mockAnalysis.js       ← ⭐ Servicio mock → reemplazar con modelo real
-├── utils/
-│   └── validators.js         ← Validación de imágenes
-├── App.jsx                   ← Router principal
-├── main.jsx                  ← Punto de entrada
-└── index.css                 ← Estilos globales + Tailwind
-```
-
----
-
-## 🧠 Cómo conectar el modelo de IA real
-
-El archivo clave es `src/services/mockAnalysis.js`.
-
-La función `analyzeLeafImage(imageFile)` ya tiene la firma y el formato de retorno correcto. Solo necesitás **reemplazar el cuerpo** de la función.
-
-### Opción A — FastAPI o Flask (backend REST)
-
-```js
-// Reemplazar el contenido de analyzeLeafImage() con:
-export async function analyzeLeafImage(imageFile) {
-  const formData = new FormData()
-  formData.append('image', imageFile)
-
-  const response = await fetch('https://tu-api.com/api/v1/analyze', {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!response.ok) {
-    throw new Error(`Error del servidor: ${response.status}`)
-  }
-
-  return await response.json() // El backend debe retornar el mismo formato de objeto
-}
-```
-
-Tu backend Python (FastAPI):
-```python
-@app.post("/api/v1/analyze")
-async def analyze(image: UploadFile = File(...)):
-    img = preprocess(await image.read())
-    prediction = model.predict(img)
-    return {
-        "success": True,
-        "result": { "disease": ..., "confidence": ..., ... }
-    }
-```
-
-### Opción B — TensorFlow.js (modelo local en el browser)
-
-```js
-import * as tf from '@tensorflow/tfjs'
-
-let model = null
-
-export async function analyzeLeafImage(imageFile) {
-  // Carga el modelo una sola vez
-  if (!model) {
-    model = await tf.loadLayersModel('/models/detectvid/model.json')
-  }
-
-  // Preprocesado: imagen → tensor 224x224x3
-  const img = await createImageBitmap(imageFile)
-  const tensor = tf.browser.fromPixels(img)
-    .resizeNearestNeighbor([224, 224])
-    .toFloat()
-    .div(255.0)
-    .expandDims(0)
-
-  // Inferencia
-  const predictions = model.predict(tensor)
-  const classIndex = predictions.argMax(-1).dataSync()[0]
-  const confidence = Math.round(predictions.max().dataSync()[0] * 100)
-
-  tensor.dispose()
-  predictions.dispose()
-
-  // Mapear classIndex a DISEASE_SCENARIOS[classIndex]
-  return buildResult(classIndex, confidence, imageFile)
-}
-```
-
-### Opción C — ONNX Runtime Web
-
-```js
-import * as ort from 'onnxruntime-web'
-
-export async function analyzeLeafImage(imageFile) {
-  const session = await ort.InferenceSession.create('/models/detectvid.onnx')
-  const inputTensor = await preprocessToOnnxTensor(imageFile) // tu función de preprocesado
-  const { output } = await session.run({ input: inputTensor })
-  const classIndex = output.data.indexOf(Math.max(...output.data))
-  return buildResult(classIndex, Math.round(output.data[classIndex] * 100), imageFile)
-}
-```
-
----
-
-## 🗺 Roadmap del producto
-
-| Fase | Estado    | Contenido                                                           |
-|------|-----------|---------------------------------------------------------------------|
-| v1.0 | ✅ Activo  | Upload, validación, análisis mock, resultados completos             |
-| v2.0 | 🔜 Próximo | Historial, dashboard analítico, exportación PDF, auth de usuarios   |
-| v3.0 | 📋 Planificado | Mapa GPS, heatmaps, modo offline, app móvil, captura con drones  |
-
----
-
-## 📱 Migración a aplicación móvil
-
-La arquitectura está preparada para migrar a React Native:
-
-1. **Reemplazar `react-router-dom`** por React Navigation
-2. **Reemplazar `useDropzone`/input file** por `react-native-image-picker`
-3. **Mover `analyzeLeafImage()`** sin cambios (misma lógica de fetch)
-4. **Tailwind** → `nativewind` o `StyleSheet`
-5. El `AnalysisContext` funciona **igual** en React Native
-
----
-
-## 🎓 Información académica
-
-| Campo         | Valor                         |
-|---------------|-------------------------------|
-| Proyecto      | DetectVID                     |
-| Institución   | Universidad de Mendoza        |
-| Autor         | Stefano Palazzo               |
-| Año           | 2026                          |
-| Tipo          | Proyecto de Tesis Final       |
-
----
-
-## 📝 Comandos útiles
+### ML API
 
 ```bash
-npm run dev      # Servidor de desarrollo (http://localhost:5173)
-npm run build    # Build de producción (genera /dist)
-npm run preview  # Preview del build de producción
+cd ml
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn api.main:app --reload --port 8000
 ```
+
+ML health: http://localhost:8000/api/ml/health
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend: http://localhost:5173
+
+## Flujo de análisis
+
+1. El usuario selecciona una imagen JPG/PNG/WEBP.
+2. La web valida tipo/tamaño y muestra preview.
+3. Se intenta extraer GPS EXIF o ubicación del dispositivo.
+4. `frontend/src/services/mlService.js` manda la imagen a `/api/ml/predict`.
+5. La ML API devuelve clase, confianza, margen e incertidumbre.
+6. El frontend muestra resultado, riesgo y recomendación.
+7. `frontend/src/services/analysisService.js` guarda imagen + resultado en `/api/analyses`.
+8. Historial, dashboard y mapa consumen esos análisis guardados.
+
+## Conectar o reemplazar modelo real
+
+La frontera estable está en:
+
+- Web: `frontend/src/services/mlService.js`
+- ML API: `ml/api/services/model_service.py`
+- Contrato respuesta: `ml/api/schemas/prediction.py`
+
+Mientras el endpoint devuelva `predicted_class`, `confidence`, `probabilities`, `is_uncertain` y `top1_margin`, el frontend no necesita cambios.
+
+## Mobile
+
+Abrir `mobile/` en Android Studio para Android. Para iOS, abrir:
+
+```text
+mobile/iosApp/DetectVID.xcodeproj
+```
+
+La app mobile guarda imágenes en sandbox local, mantiene cola offline y sincroniza con:
+
+- `POST /api/ml/predict`
+- `POST /api/analyses`
+- `GET /api/analyses?limit=100`
+
+Más detalles en `mobile/README.md`.
+
+## Checks útiles
+
+```bash
+npm --prefix frontend run build
+npm --prefix backend run db:generate
+python3 -m py_compile ml/src/*.py ml/api/services/*.py ml/api/*.py
+cd mobile && ./gradlew --no-daemon :composeApp:assembleDebug :composeApp:compileKotlinIosSimulatorArm64
+```
+
+## Despliegue en VM
+
+Ver `docs/DEPLOYMENT_VM.md`.
+
+## Documentación adicional
+
+- `docs/ARCHITECTURE.md` — arquitectura general.
+- `docs/DEPLOYMENT_VM.md` — guía paso a paso para VM.
+- `docs/IMPLEMENTATION_REPORT.md` — cambios recientes y validación.
+- `ml/docs/EXPERIMENTS.md` — guía de experimentos ML.

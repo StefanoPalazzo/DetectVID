@@ -19,5 +19,6 @@ COPY . .
 
 EXPOSE 3001
 
-# Script de inicio: corre las migraciones antes de arrancar el servidor
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run dev"]
+# Script de inicio: corre las migraciones antes de arrancar el servidor.
+# En contenedor/VM usamos npm start, no nodemon.
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]

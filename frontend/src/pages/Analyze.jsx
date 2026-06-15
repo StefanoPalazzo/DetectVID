@@ -17,7 +17,7 @@
 
 import React, { useRef, useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ScanLine, Brain, AlertCircle, RefreshCw, MapPin, X, Loader2 } from 'lucide-react'
+import { ScanLine, Brain, AlertCircle, RefreshCw, MapPin, X, Loader2, CheckCircle2, Save } from 'lucide-react'
 import * as exifr from 'exifr'
 import { useAnalysis } from '../context/AnalysisContext'
 import { analyzeLeafImage } from '../services/mlService'
@@ -103,6 +103,8 @@ export default function Analyze() {
   const [coordsInput, setCoordsInput] = useState('')    // valor del input editable
   const [coordsLoading, setCoordsLoading] = useState(false)
   const [editingCoords, setEditingCoords] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('idle')  // idle | saving | saved | error
+  const [saveMessage, setSaveMessage] = useState('')
 
   // Cuando cambia la imagen: intentar leer EXIF, luego device GPS como fallback
   useEffect(() => {
@@ -112,6 +114,8 @@ export default function Analyze() {
       setCoordsSource(null)
       setCoordsInput('')
       setEditingCoords(false)
+      setSaveStatus('idle')
+      setSaveMessage('')
       return
     }
 
@@ -183,10 +187,19 @@ export default function Analyze() {
       const result = await analyzeLeafImage(currentImage)
       setResult(result)
 
-      // Persistir en la DB de forma no bloqueante
-      saveAnalysis(currentImage, result, coords).catch((err) => {
-        console.warn('[DetectVID] No se pudo guardar el análisis en la BD:', err.message)
-      })
+      // Persistir en la DB sin bloquear la visualización del resultado.
+      setSaveStatus('saving')
+      setSaveMessage('Guardando el análisis en tu historial…')
+      saveAnalysis(currentImage, result, coords)
+        .then(() => {
+          setSaveStatus('saved')
+          setSaveMessage('Análisis guardado y disponible en Historial/Dashboard.')
+        })
+        .catch((err) => {
+          console.warn('[DetectVID] No se pudo guardar el análisis en la BD:', err.message)
+          setSaveStatus('error')
+          setSaveMessage('El diagnóstico se generó, pero no pudo guardarse en el historial. Revisá la conexión e intentá más tarde.')
+        })
 
     } catch (err) {
       console.error('[DetectVID] Error en análisis:', err)
@@ -365,8 +378,9 @@ export default function Analyze() {
 
         {/* PASO 4: Completado → mostrar resultados */}
         {analysisStatus === 'complete' && (
-          <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             <ResultsCard />
+            <SaveStatusCard status={saveStatus} message={saveMessage} />
           </motion.div>
         )}
 
@@ -396,6 +410,33 @@ export default function Analyze() {
         )}
 
       </AnimatePresence>
+    </div>
+  )
+}
+
+function SaveStatusCard({ status, message }) {
+  if (status === 'idle') return null
+
+  const config = {
+    saving: {
+      icon: <Loader2 size={16} className="animate-spin" />,
+      classes: 'border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    },
+    saved: {
+      icon: <CheckCircle2 size={16} />,
+      classes: 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    },
+    error: {
+      icon: <AlertCircle size={16} />,
+      classes: 'border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-200',
+    },
+  }[status]
+
+  return (
+    <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${config.classes}`}>
+      <Save size={15} className="opacity-70" />
+      {config.icon}
+      <span>{message}</span>
     </div>
   )
 }

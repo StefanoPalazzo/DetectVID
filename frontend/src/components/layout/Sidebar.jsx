@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { label: 'Inicio',        path: '/',          icon: Home,          badge: null,                            disabled: false, exact: true  },
   { label: 'Analizar Hoja', path: '/analyze',   icon: ScanLine,      badge: { text: 'MVP', color: 'green' }, disabled: false, exact: false },
   { label: 'Historial',     path: '/history',   icon: ClipboardList, badge: null,                            disabled: false },
-  { label: 'Dashboard',     path: '/dashboard', icon: BarChart2,     badge: { text: 'Próximamente', color: 'gray' }, disabled: true },
+  { label: 'Dashboard',     path: '/dashboard', icon: BarChart2,     badge: null,                            disabled: false },
   { label: 'Mapa de Finca', path: '/map',       icon: Map,           badge: null,                            disabled: false },
   { label: 'Configuración', path: '/settings',  icon: Settings,      badge: null,                            disabled: false },
 ]
