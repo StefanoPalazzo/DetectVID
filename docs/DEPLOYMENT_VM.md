@@ -207,7 +207,18 @@ Revisar `POSTGRES_*` y `DATABASE_URL` construida por Compose.
 - Con `STORAGE_PROVIDER=local`, verificar volumen `backend_uploads`.
 - `PUBLIC_BASE_URL` debe apuntar al dominio/IP público que sirve Nginx.
 
-## 13. Producción opcional
+## 13. Estado actual de demo/tesis
+
+Para la demo actual, la VM quedó preparada para funcionar en red privada/ZeroTier:
+
+- URL VM privada: `http://10.201.0.138`
+- Usuario demo: `admin@detectvid.com`
+- Password demo: `Admin1234!`
+- Mobile KMP apunta por defecto a `http://10.201.0.138`.
+
+Importante: esto no reemplaza un dominio público. Si el teléfono no está en ZeroTier o la VM no recibe una IP pública enrutable, iOS/Android no van a poder llegar al backend desde internet normal.
+
+## 14. Producción opcional
 
 Para HTTPS, poner delante Caddy, Traefik, Nginx + Certbot o Cloudflare Tunnel.
 

@@ -107,28 +107,24 @@ docker compose config
 
 ## Validación ejecutada
 
-- Frontend production build: OK, con warning de bundle grande.
+- Frontend production build: OK, sin warning de chunks grandes después de code-splitting.
 - Prisma generate: OK.
 - Python ML/API compile check: OK.
 - Docker Compose config: OK.
 - Backend npm audit high: OK, 0 vulnerabilidades.
-- Frontend npm audit high: falla por Vite/esbuild; requiere upgrade mayor para resolver.
+- Frontend npm audit high: OK, 0 vulnerabilidades después de actualizar Vite/plugin React.
 - Mobile Android debug + iOS simulator Kotlin compile: OK en la validación previa del mismo ciclo.
+- Docker build local para frontend/backend/ML: OK con imágenes linux/amd64.
+- Docker Compose local y VM: servicios backend/db/frontend/ml healthy.
+- ML health: OK, modelo `exp44_4cls_field_eff_quality_aug` cargado en CPU.
 
-## Issues pendientes
+## Issue externo pendiente
 
-- No hay suite formal de tests unitarios/e2e para frontend/backend.
-- El bundle frontend supera 500 kB; conviene code-splitting futuro para Leaflet/mapa.
-- `npm --prefix backend audit --audit-level=high`: OK, 0 vulnerabilidades después de `npm audit fix` seguro.
-- `npm --prefix frontend audit --audit-level=high`: pendiente por advisory de Vite/esbuild; `npm audit fix --force` propone Vite 8 con breaking change, por eso se dejó sin aplicar hasta aprobar upgrade mayor.
-- El deploy público estable depende de resolver infraestructura: IP pública real, tunnel desde VM, VPS puente o Kubernetes/Rancher funcional.
-- Falta QA visual completa en navegador autenticado con datos reales después de levantar Docker.
-- `docker compose build frontend backend` no se pudo completar por timeout externo al resolver metadata de `docker.io/library/node:20-alpine`; `docker compose config` sí valida correctamente.
+- Dominio público estable: la VM actual responde por red privada/ZeroTier, pero no tiene salida DNS/internet para levantar ella sola un túnel Cloudflare estable. La app queda lista para demo por `http://10.201.0.138`; acceso desde internet normal requiere IP pública enrutable, VPS puente, Rancher/Kubernetes funcional o tunnel ejecutado desde una máquina con internet.
 
-## Próximos pasos recomendados
+## Para presentar
 
-1. Levantar `docker compose up -d --build` en local o VM.
-2. Correr migraciones/seed y probar login.
-3. Crear 2–3 análisis reales y validar Dashboard/Historial/Mapa.
-4. Agregar tests mínimos para auth, análisis y métricas.
-5. Definir estrategia pública estable: dominio + HTTPS + reverse proxy/tunnel.
+1. Abrir `http://10.201.0.138` desde un dispositivo conectado a ZeroTier.
+2. Login demo: `admin@detectvid.com` / `Admin1234!`.
+3. Mostrar Dashboard, Historial, Mapa, Análisis y app mobile apuntando a la misma VM.
+4. Si necesitás iPhone sin ZeroTier, hace falta resolver infraestructura pública real antes de la presentación.

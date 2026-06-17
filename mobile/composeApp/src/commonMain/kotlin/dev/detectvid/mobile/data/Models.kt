@@ -162,4 +162,4 @@ data class RemoteAnalysis(
     val createdAt: String? = null,
 )
 
-const val DEFAULT_BASE_URL = "https://regulated-wing-explorer-trivia.trycloudflare.com"
+const val DEFAULT_BASE_URL = "http://10.201.0.138"

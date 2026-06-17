@@ -284,9 +284,10 @@ USE_COMPILE = False
 
 # ─── Checkpoints ─────────────────────────────────────────────────────────────
 
-EXPERIMENT_ID     = "exp27_4cls_aug_quirurgico"
-CHECKPOINTS_DIR   = PROJECT_ROOT / "checkpoints"
-BEST_MODEL_PATH   = CHECKPOINTS_DIR / f"{EXPERIMENT_ID}_best.pth"
+EXPERIMENT_ID     = os.environ.get("MODEL_EXPERIMENT_ID", "exp44_4cls_field_eff_quality_aug")
+CHECKPOINTS_DIR   = Path(os.environ.get("CHECKPOINTS_DIR", PROJECT_ROOT / "checkpoints"))
+MODEL_CHECKPOINT_OVERRIDE = os.environ.get("MODEL_CHECKPOINT_PATH")
+BEST_MODEL_PATH   = Path(MODEL_CHECKPOINT_OVERRIDE) if MODEL_CHECKPOINT_OVERRIDE else CHECKPOINTS_DIR / f"{EXPERIMENT_ID}_best.pth"
 LAST_MODEL_PATH   = CHECKPOINTS_DIR / "last_model.pth"
 
 # ─── Resultados ──────────────────────────────────────────────────────────────
@@ -343,7 +344,7 @@ elif override == "exp31":
         "random_resized_crop_scale": (0.5, 1.0),
     }
 
-BEST_MODEL_PATH   = CHECKPOINTS_DIR / f"{EXPERIMENT_ID}_best.pth"
+BEST_MODEL_PATH   = Path(MODEL_CHECKPOINT_OVERRIDE) if MODEL_CHECKPOINT_OVERRIDE else CHECKPOINTS_DIR / f"{EXPERIMENT_ID}_best.pth"
 
 # ─── Hiperparámetros de Entrenamiento ────────────────────────────────────────
 

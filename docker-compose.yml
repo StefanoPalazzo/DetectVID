@@ -33,6 +33,7 @@ services:
     environment:
       - ENVIRONMENT=production
       - OMP_NUM_THREADS=4
+      - MODEL_EXPERIMENT_ID=${MODEL_EXPERIMENT_ID:-exp44_4cls_field_eff_quality_aug}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/ml/health', timeout=5)"]
       interval: 30s
@@ -50,6 +51,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-detectvid2026}@db:5432/${POSTGRES_DB:-detectvid}?schema=public
       - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_detectvid}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - NODE_ENV=${NODE_ENV:-production}
       - ML_API_URL=http://ml:8000
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
       - LOCAL_STORAGE_PATH=/app/uploads
@@ -87,7 +90,7 @@ services:
     networks:
       - detectvid_network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
