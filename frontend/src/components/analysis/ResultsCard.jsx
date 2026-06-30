@@ -13,12 +13,8 @@ import {
   AlertCircle,
   RefreshCw,
   Clock,
-  Zap,
   Activity,
-  Save,
-  FileText,
   ChevronRight,
-  Info,
 } from 'lucide-react'
 import { useAnalysis } from '../../context/AnalysisContext'
 
@@ -151,28 +147,11 @@ export default function ResultsCard() {
             </p>
           </div>
 
-          {/* ── DETALLES DEL ANÁLISIS ─────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            <DetailBox
-              icon={<Zap size={14} />}
-              label="Urgencia"
-              value={result.urgency}
-              colorClass={result.riskColor === 'red' ? 'text-red-400' : result.riskColor === 'yellow' ? 'text-yellow-400' : 'text-emerald-400'}
-            />
-            <DetailBox
-              icon={<Activity size={14} />}
-              label="Área afectada"
-              value={result.affectedArea}
-              colorClass="text-gray-900 dark:text-white"
-              tooltip="Porcentaje estimado de la superficie de la hoja con síntomas visibles de la enfermedad detectada."
-            />
-          </div>
-
-          {/* ── SÍNTOMAS DETECTADOS ───────────────────────────────── */}
+          {/* ── SÍNTOMAS COMUNES ──────────────────────────────────── */}
           <div>
             <h4 className="text-gray-500 dark:text-gray-400 text-sm font-medium mb-2 flex items-center gap-1.5">
               <ChevronRight size={13} className="text-emerald-500" />
-              Síntomas identificados
+              Síntomas comunes en esta enfermedad
             </h4>
             <ul className="space-y-1.5">
               {result.symptoms.map((symptom, i) => (
@@ -230,59 +209,7 @@ export default function ResultsCard() {
           <RefreshCw size={15} />
           Nuevo Análisis
         </button>
-
-        {/* Botones deshabilitados (próximas versiones) */}
-        <button
-          disabled
-          title="Disponible en versión 2.0"
-          className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 font-medium px-5 py-2.5 rounded-xl cursor-not-allowed opacity-60"
-        >
-          <Save size={15} />
-          Guardar Resultado
-          <span className="text-xs bg-gray-700 px-1.5 py-0.5 rounded ml-1">v2.0</span>
-        </button>
-
-        <button
-          disabled
-          title="Disponible en versión 2.0"
-          className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 font-medium px-5 py-2.5 rounded-xl cursor-not-allowed opacity-60"
-        >
-          <FileText size={15} />
-          Exportar PDF
-          <span className="text-xs bg-gray-700 px-1.5 py-0.5 rounded ml-1">v2.0</span>
-        </button>
       </div>
     </motion.div>
-  )
-}
-
-// ── SUBCOMPONENTE: CAJA DE DETALLE ────────────────────────────────────────
-function DetailBox({ icon, label, value, colorClass, tooltip }) {
-  return (
-    <div className="bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 rounded-xl p-3">
-      {/* Label con ícono y, opcionalmente, ícono de info con tooltip */}
-      <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 text-xs mb-1">
-        {icon}
-        <span>{label}</span>
-        {tooltip && (
-          <span className="relative group ml-auto cursor-default">
-            <Info size={11} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" />
-            {/* Tooltip — aparece al hacer hover */}
-            <span className="
-              pointer-events-none absolute bottom-full right-0 mb-1.5
-              w-52 bg-gray-900 dark:bg-gray-700 text-white text-xs leading-relaxed
-              px-3 py-2 rounded-lg shadow-lg
-              opacity-0 group-hover:opacity-100
-              transition-opacity duration-150 z-10
-            ">
-              {tooltip}
-              {/* Flecha del tooltip */}
-              <span className="absolute top-full right-2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700" />
-            </span>
-          </span>
-        )}
-      </div>
-      <p className={`font-semibold text-sm ${colorClass}`}>{value}</p>
-    </div>
   )
 }

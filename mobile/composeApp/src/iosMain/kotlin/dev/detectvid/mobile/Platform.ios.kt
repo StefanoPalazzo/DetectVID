@@ -194,12 +194,14 @@ actual fun nowIsoString(): String {
 actual fun AnalysisImagePreview(localImagePath: String?, remoteImageUrl: String?, contentDescription: String?, modifier: Modifier) {
     val imageBitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, localImagePath, remoteImageUrl) {
         value = withContext(Dispatchers.Default) {
-            val bytes = localImagePath
+            val localBitmap = localImagePath
                 ?.let { runCatching { NSData.dataWithContentsOfFile(IosFileSystem().absolutePath(it))?.toByteArray() }.getOrNull() }
-                ?: remoteImageUrl
-                    ?.normalizeImageUrl()
-                    ?.let { runCatching { NSData.dataWithContentsOfURL(NSURL(string = it))?.toByteArray() }.getOrNull() }
-            bytes?.let { runCatching { makeFromEncoded(it).toComposeImageBitmap() }.getOrNull() }
+                ?.let { runCatching { makeFromEncoded(it).toComposeImageBitmap() }.getOrNull() }
+
+            localBitmap ?: remoteImageUrl
+                ?.normalizeImageUrl()
+                ?.let { runCatching { NSData.dataWithContentsOfURL(NSURL(string = it))?.toByteArray() }.getOrNull() }
+                ?.let { runCatching { makeFromEncoded(it).toComposeImageBitmap() }.getOrNull() }
         }
     }
 
@@ -218,12 +220,19 @@ actual fun AnalysisImagePreview(localImagePath: String?, remoteImageUrl: String?
     }
 }
 
-private fun String.normalizeImageUrl(): String =
-    when {
-        startsWith("http://") || startsWith("https://") -> this
-        startsWith("/") -> DEFAULT_BASE_URL.trimEnd('/') + this
-        else -> DEFAULT_BASE_URL.trimEnd('/') + "/" + this
+private fun String.normalizeImageUrl(): String {
+    val raw = trim()
+    val uploadsPath = raw.substringAfter("://", raw)
+        .substringAfter('/', missingDelimiterValue = "")
+        .let { if (it.startsWith("uploads/")) "/$it" else null }
+    if (uploadsPath != null) return DEFAULT_BASE_URL.trimEnd('/') + uploadsPath
+
+    return when {
+        raw.startsWith("http://") || raw.startsWith("https://") -> raw
+        raw.startsWith("/") -> DEFAULT_BASE_URL.trimEnd('/') + raw
+        else -> DEFAULT_BASE_URL.trimEnd('/') + "/" + raw
     }
+}
 
 @Composable
 @OptIn(ExperimentalForeignApi::class)

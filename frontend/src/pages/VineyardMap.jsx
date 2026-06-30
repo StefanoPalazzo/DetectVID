@@ -9,19 +9,17 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polygon, Tooltip, Circle, useMap } from 'react-leaflet'
-import L from 'leaflet'
+import L from '../lib/leafletPlugins'
 import 'leaflet/dist/leaflet.css'
-import '@geoman-io/leaflet-geoman-free'
-import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
-// leaflet-control-geocoder se registra como side-effect en L.Control.Geocoder
 import 'leaflet-control-geocoder/dist/Control.Geocoder.css'
-import 'leaflet-control-geocoder'
+import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Map, Plus, Trash2, Edit3, X, Check, Info, Loader2, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
 import { getFincas, createFinca, deleteFinca } from '../services/fincaService'
+import { normalizeImageUrl } from '../utils/imageUrl'
 
 // ── Fix de íconos de Leaflet para Vite ────────────────────────────────────────
 // Vite no copia los PNGs de leaflet/dist/images al build automáticamente.
@@ -117,7 +115,7 @@ function GeomanControls({ drawingActive, onPolygonCreated }) {
 
   // Escuchar la creación de un nuevo polígono
   useEffect(() => {
-    if (!map) return
+    if (!map || !map.pm) return
 
     map.pm.setGlobalOptions({ snappable: true, snapDistance: 20 })
 
@@ -134,7 +132,7 @@ function GeomanControls({ drawingActive, onPolygonCreated }) {
 
   // Activar/desactivar modo de dibujo + invalidateSize antes de empezar
   useEffect(() => {
-    if (!map) return
+    if (!map || !map.pm) return
     if (drawingActive) {
       // Recalcular dimensiones justo antes de activar el dibujo
       // para que el primer click mapee correctamente a coordenadas
@@ -428,7 +426,7 @@ export default function VineyardMap() {
                         <div className="min-w-[180px] text-sm">
                           {analysis.imageUrl && (
                             <img
-                              src={analysis.imageUrl}
+                              src={normalizeImageUrl(analysis.imageUrl)}
                               alt="Imagen del análisis"
                               className="w-full h-24 object-cover rounded mb-2"
                               onError={e => { e.target.style.display = 'none' }}

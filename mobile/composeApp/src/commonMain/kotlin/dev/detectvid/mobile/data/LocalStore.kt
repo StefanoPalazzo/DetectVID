@@ -70,8 +70,14 @@ class LocalStore(
         it.copy(result = envelope, status = SyncStatus.Syncing, errorMessage = null, updatedAt = nowIsoString())
     }
 
-    suspend fun markSynced(id: String, remoteId: String?): MobileState = updateAnalysis(id) {
-        it.copy(status = SyncStatus.Synced, remoteId = remoteId, errorMessage = null, updatedAt = nowIsoString())
+    suspend fun markSynced(id: String, remoteId: String?, remoteImageUrl: String? = null): MobileState = updateAnalysis(id) {
+        it.copy(
+            status = SyncStatus.Synced,
+            remoteId = remoteId,
+            remoteImageUrl = remoteImageUrl ?: it.remoteImageUrl,
+            errorMessage = null,
+            updatedAt = nowIsoString(),
+        )
     }
 
     suspend fun deleteAnalysis(id: String): MobileState = update { current ->

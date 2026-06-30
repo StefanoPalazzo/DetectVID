@@ -8,6 +8,7 @@ import React from 'react'
 import { useLocation } from 'react-router-dom'
 import { UserCircle2, Sun, Moon } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext'
+import { useAuth } from '../../context/AuthContext'
 
 const PAGE_MAP = {
   '/':          { title: 'Inicio',           subtitle: 'Panel principal de DetectVID' },
@@ -21,6 +22,7 @@ const PAGE_MAP = {
 export default function Header() {
   const location   = useLocation()
   const { isDark, toggleTheme } = useTheme()
+  const { user } = useAuth()
 
   const page = PAGE_MAP[location.pathname] || { title: 'DetectVID', subtitle: '' }
 
@@ -76,7 +78,7 @@ export default function Header() {
         {/* Info del usuario */}
         <div className="flex items-center gap-2">
           <UserCircle2 size={20} className="text-gray-400 dark:text-gray-400" />
-          <span className="text-gray-700 dark:text-gray-300 text-sm font-medium">Demo</span>
+          <span className="text-gray-700 dark:text-gray-300 text-sm font-medium">{user?.name || 'Usuario'}</span>
         </div>
       </div>
     </header>

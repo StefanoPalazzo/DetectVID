@@ -22,6 +22,7 @@ import {
 import clsx from 'clsx'
 import { getAnalyses } from '../services/analysisService'
 import { buildAnalysisMetrics, formatAnalysisDate } from '../utils/analysisMetrics'
+import { normalizeImageUrl } from '../utils/imageUrl'
 
 const CARD_STYLES = {
   emerald: 'from-emerald-500/18 to-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
@@ -226,7 +227,7 @@ function LatestAnalysis({ analysis }) {
     <div className="flex flex-col sm:flex-row gap-4">
       <div className="w-full sm:w-44 h-36 rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0">
         {analysis.imageUrl ? (
-          <img src={analysis.imageUrl} alt={analysis.diseaseName || analysis.disease} className="w-full h-full object-cover" />
+          <img src={normalizeImageUrl(analysis.imageUrl)} alt={analysis.diseaseName || analysis.disease} className="w-full h-full object-cover" />
         ) : (
           <div className="h-full flex items-center justify-center text-gray-400"><Leaf size={32} /></div>
         )}

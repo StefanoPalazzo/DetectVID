@@ -1,17 +1,18 @@
 // src/pages/Settings.jsx
-// Página de Configuración — visual con datos del proyecto y perfil demo
+// Página de Configuración — perfil real y datos del proyecto DetectVID.
 
 import React from 'react'
 import {
-  Settings, User, Info, GraduationCap, Cpu,
-  Globe, Bell, Shield,
+  Settings, User, GraduationCap, Cpu, Globe,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 export default function SettingsPage() {
+  const { user } = useAuth()
+
   return (
     <div className="max-w-2xl mx-auto px-6 py-8 space-y-8">
 
-      {/* ── HEADER ────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
           <Settings size={16} className="text-gray-500 dark:text-gray-400" />
@@ -22,51 +23,45 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ── PERFIL ────────────────────────────────────────────────── */}
-      <SettingsSection icon={<User size={16} />} title="Perfil" badge="Solo lectura">
+      <SettingsSection icon={<User size={16} />} title="Perfil" badge="Cuenta">
         <div className="space-y-3">
-          <FieldRow label="Nombre"        value="Usuario Demo"              />
-          <FieldRow label="Rol"           value="Productor / Investigador"  />
-          <FieldRow label="Institución"   value="Universidad de Mendoza"    />
-          <p className="text-gray-400 dark:text-gray-600 text-xs pt-1">
-            La edición de perfil estará disponible en versiones futuras con sistema de autenticación.
-          </p>
+          <FieldRow label="Nombre" value={user?.name || 'Usuario'} />
+          <FieldRow label="Email" value={user?.email || 'No disponible'} />
+          <FieldRow label="Rol" value={formatRole(user?.role)} />
+          <FieldRow label="Institución" value="Universidad de Mendoza" />
         </div>
       </SettingsSection>
 
-      {/* ── SOBRE EL PROYECTO ─────────────────────────────────────── */}
       <SettingsSection icon={<GraduationCap size={16} />} title="Información del Proyecto">
         <div className="space-y-3">
-          <FieldRow label="Proyecto"      value="DetectVID"                       />
-          <FieldRow label="Institución"   value="Universidad de Mendoza"          />
-          <FieldRow label="Autor"         value="Stefano Palazzo"                 />
-          <FieldRow label="Carrera"       value="Ingeniería"                      />
-          <FieldRow label="Período"       value="2026"                     />
-          <FieldRow label="Tipo"          value="Proyecto de Tesis Final"         />
+          <FieldRow label="Proyecto" value="DetectVID" />
+          <FieldRow label="Institución" value="Universidad de Mendoza" />
+          <FieldRow label="Autor" value="Stefano Palazzo" />
+          <FieldRow label="Carrera" value="Ingeniería" />
+          <FieldRow label="Período" value="2026" />
+          <FieldRow label="Tipo" value="Proyecto de Tesis Final" />
         </div>
       </SettingsSection>
 
-      {/* ── SISTEMA ───────────────────────────────────────────────── */}
       <SettingsSection icon={<Cpu size={16} />} title="Información del Sistema">
         <div className="space-y-3">
-          <FieldRow label="Versión"       value="1.0.0 MVP"                       />
-          <FieldRow label="Modelo IA"     value="DetectVID-Mock-v1 (Simulación)"  />
-          <FieldRow label="Frontend"      value="React 18 + Vite + Tailwind CSS"  />
-          <FieldRow label="Enfermedades" value="Oídio, Peronóspora, Botrytis, Sana" />
-          <FieldRow label="Backend real"  value="Pendiente (FastAPI / TensorFlow.js)" />
-          <FieldRow label="Estado"        value="MVP Funcional"                   highlight />
+          <FieldRow label="Versión" value="v2.0.5 MVP" />
+          <FieldRow label="Modelo IA" value="EfficientNet-B0 · exp44_4cls_field_eff_quality_aug" />
+          <FieldRow label="Frontend" value="React + Vite + Tailwind CSS" />
+          <FieldRow label="Backend" value="Express + PostgreSQL + FastAPI ML" />
+          <FieldRow label="Enfermedades" value="Oídio, Peronóspora, Otras, Sana" />
+          <FieldRow label="Estado" value="MVP funcional" highlight />
         </div>
       </SettingsSection>
 
-      {/* ── PRÓXIMAS CONFIG ───────────────────────────────────────── */}
       <SettingsSection icon={<Globe size={16} />} title="Preferencias" badge="Próximamente">
         <div className="space-y-3 opacity-50 pointer-events-none">
-          <FieldRow label="Idioma"         value="Español (Argentina)" />
+          <FieldRow label="Idioma" value="Español" />
           <FieldRow label="Umbral mínimo de confianza" value="80%" />
           <FieldRow label="Notificaciones" value="Activadas" />
         </div>
         <p className="text-gray-400 dark:text-gray-600 text-xs mt-2">
-          Configuración de preferencias disponible en v2.0
+          Configuración avanzada disponible en próximas versiones.
         </p>
       </SettingsSection>
 
@@ -74,7 +69,10 @@ export default function SettingsPage() {
   )
 }
 
-// ── SUBCOMPONENTES ────────────────────────────────────────────────────────
+function formatRole(role) {
+  if (!role) return 'Productor / Investigador'
+  return role === 'ADMIN' ? 'Administrador' : 'Usuario'
+}
 
 function SettingsSection({ icon, title, badge, children }) {
   return (

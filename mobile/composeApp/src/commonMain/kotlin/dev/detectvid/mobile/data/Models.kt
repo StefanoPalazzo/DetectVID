@@ -157,9 +157,9 @@ data class RemoteAnalysis(
     val longitude: Double? = null,
     val analysisId: String,
     val processingTime: Int? = null,
-    val modelName: String = "DetectVID-v1",
+    val modelName: String = "EfficientNet-B0 exp44_4cls_field_eff_quality_aug",
     val diseaseName: String? = null,
     val createdAt: String? = null,
 )
 
-const val DEFAULT_BASE_URL = "http://10.201.0.138"
+const val DEFAULT_BASE_URL = "https://success-amanda-enlargement-globe.trycloudflare.com"

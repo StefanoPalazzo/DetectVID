@@ -1,38 +1,78 @@
 // src/pages/Home.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 // Página de inicio de DetectVID.
-// Presenta el producto, sus capacidades, y el estado del proyecto.
+// Presenta el producto, sus capacidades, y el estado real del usuario.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ScanLine, Brain, Zap, ClipboardList,
-  BarChart2, Map, Wifi, GraduationCap, ArrowRight,
-  Leaf, ShieldCheck,
+  ScanLine, Brain, Zap, GraduationCap, ArrowRight,
+  ShieldCheck,
 } from 'lucide-react'
+import { getAnalyses } from '../services/analysisService'
+import { getFincas } from '../services/fincaService'
 
 export default function Home() {
+  const [analyses, setAnalyses] = useState([])
+  const [zones, setZones] = useState([])
+  const [statsLoading, setStatsLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadStats() {
+      try {
+        const [analysisData, fincaData] = await Promise.allSettled([
+          getAnalyses({ limit: 500 }),
+          getFincas(),
+        ])
+
+        if (cancelled) return
+
+        if (analysisData.status === 'fulfilled') {
+          const payload = analysisData.value
+          setAnalyses(Array.isArray(payload) ? payload : (payload.analyses ?? []))
+        }
+
+        if (fincaData.status === 'fulfilled') {
+          const payload = fincaData.value
+          setZones(Array.isArray(payload) ? payload : (payload.fincas ?? []))
+        }
+      } finally {
+        if (!cancelled) setStatsLoading(false)
+      }
+    }
+
+    loadStats()
+    return () => { cancelled = true }
+  }, [])
+
+  const stats = useMemo(() => {
+    const diseaseCount = analyses.filter(isDiseaseAnalysis).length
+    return {
+      total: analyses.length,
+      diseases: diseaseCount,
+      zones: zones.length,
+    }
+  }, [analyses, zones])
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
 
       {/* ── HERO ─────────────────────────────────────────────────── */}
       <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-8 overflow-hidden">
-        {/* Decoración de fondo */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-700/5 rounded-full -translate-y-1/2 translate-x-1/3 pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-vine-800/10 rounded-full translate-y-1/2 -translate-x-1/3 pointer-events-none" />
 
         <div className="relative">
-          {/* Badge de versión */}
           <span className="inline-flex items-center gap-1.5 bg-emerald-700/20 border border-emerald-700/40 text-emerald-400 text-xs font-medium px-3 py-1 rounded-full mb-4">
             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-            v1.0.0 MVP — En desarrollo activo
+            v2.0.5 MVP — En desarrollo activo
           </span>
 
-          {/* Título principal */}
           <h1 className="text-gray-900 dark:text-white font-bold text-3xl md:text-4xl leading-tight mb-3">
-            Bienvenido a{' '}
-            <span className="text-gradient-vine">DetectVID</span>
+            Bienvenido a <span className="text-gradient-vine">DetectVID</span>
           </h1>
 
           <p className="text-gray-500 dark:text-gray-400 text-lg max-w-2xl leading-relaxed mb-6">
@@ -40,7 +80,6 @@ export default function Home() {
             inteligencia artificial. Subí una foto de una hoja y obtené un diagnóstico instantáneo.
           </p>
 
-          {/* CTA principal */}
           <Link
             to="/analyze"
             className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors duration-150 shadow-glow"
@@ -52,20 +91,17 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── STATS (mock — fase 1) ─────────────────────────────────── */}
+      {/* ── STATS REALES ─────────────────────────────────────────── */}
       <div>
         <div className="flex items-center gap-2 mb-4">
           <p className="text-gray-500 text-xs uppercase tracking-wider font-semibold">
             Estadísticas
           </p>
-          <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-600 text-xs px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
-            Demo
-          </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard value="0" label="Análisis realizados"     note="Esta sesión" />
-          <StatCard value="0" label="Enfermedades detectadas" note="Total histórico" />
-          <StatCard value="0" label="Hectáreas monitoreadas"  note="Disponible en v2.0" />
+          <StatCard value={statsLoading ? '…' : stats.total} label="Análisis realizados" note="Total histórico" />
+          <StatCard value={statsLoading ? '…' : stats.diseases} label="Enfermedades detectadas" note="Resultados con riesgo" />
+          <StatCard value={statsLoading ? '…' : stats.zones} label="Zonas agregadas" note="Fincas o sectores creados" />
         </div>
       </div>
 
@@ -78,59 +114,23 @@ export default function Home() {
           <FeatureCard
             icon={<Brain size={20} />}
             title="Detección con IA"
-            description="Clasifica Oídio, Peronóspora, Botrytis y hojas sanas con hasta 95% de precisión en condiciones controladas."
+            description="Clasifica Oídio, Peronóspora, Otras enfermedades y hojas sanas con el modelo entrenado de DetectVID."
             iconBg="bg-emerald-700/20 text-emerald-400"
             available
           />
           <FeatureCard
             icon={<Zap size={20} />}
             title="Análisis Instantáneo"
-            description="Resultado en 3-5 segundos. Sin necesidad de conectividad especial ni hardware adicional."
+            description="Resultado en pocos segundos desde la web o desde la app móvil, con sincronización cuando vuelve la conexión."
             iconBg="bg-blue-700/20 text-blue-400"
             available
           />
           <FeatureCard
             icon={<ShieldCheck size={20} />}
             title="Recomendaciones"
-            description="Cada diagnóstico incluye nivel de riesgo, urgencia de acción y recomendación agronómica básica."
+            description="Cada diagnóstico incluye nivel de riesgo, confianza del modelo y recomendación agronómica básica."
             iconBg="bg-violet-700/20 text-violet-400"
             available
-          />
-        </div>
-      </div>
-
-      {/* ── PRÓXIMAS FUNCIONALIDADES ──────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-gray-900 dark:text-white font-semibold text-xl">Roadmap</h2>
-          <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700">
-            Próximas versiones
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <RoadmapCard
-            icon={<ClipboardList size={18} />}
-            title="Historial de Análisis"
-            version="v2.0"
-            description="Registro histórico de todos los análisis realizados, con filtros por fecha, enfermedad y resultado."
-          />
-          <RoadmapCard
-            icon={<BarChart2 size={18} />}
-            title="Dashboard Analítico"
-            version="v2.0"
-            description="Estadísticas por sector, evolución temporal de enfermedades y tendencias del viñedo."
-          />
-          <RoadmapCard
-            icon={<Map size={18} />}
-            title="Mapa GPS del Viñedo"
-            version="v3.0"
-            description="Geolocalización de análisis, heatmaps por enfermedad y monitoreo sector por sector."
-          />
-          <RoadmapCard
-            icon={<Wifi size={18} />}
-            title="Modo Offline + Drones"
-            version="v3.0"
-            description="Análisis sin conexión a internet e integración con capturas aéreas desde drones."
           />
         </div>
       </div>
@@ -147,8 +147,7 @@ export default function Home() {
               DetectVID es desarrollado como proyecto de tesis en la{' '}
               <strong className="text-gray-700 dark:text-gray-200">Universidad de Mendoza</strong>.
               El objetivo es demostrar la viabilidad de aplicar visión computacional e inteligencia
-              artificial a la viticultura de precisión, haciendo el monitoreo fitosanitario más
-              accesible, económico y escalable para productores de todos los tamaños.
+              artificial a la viticultura de precisión.
             </p>
             <p className="text-gray-400 dark:text-gray-600 text-xs mt-2">
               Autor: Stefano Palazzo • Ingeniería • 2026
@@ -161,7 +160,11 @@ export default function Home() {
   )
 }
 
-// ── SUBCOMPONENTES ────────────────────────────────────────────────────────
+function isDiseaseAnalysis(analysis) {
+  const key = String(analysis.diseaseKey || '').toLowerCase()
+  const name = String(analysis.diseaseName || analysis.disease || '').toLowerCase()
+  return !['healthy', 'sana', 'no_conclusive', 'no concluyente'].some(token => key.includes(token) || name.includes(token))
+}
 
 function StatCard({ value, label, note }) {
   return (
@@ -186,23 +189,6 @@ function FeatureCard({ icon, title, description, iconBg, available }) {
         )}
       </div>
       <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">{description}</p>
-    </div>
-  )
-}
-
-function RoadmapCard({ icon, title, version, description }) {
-  return (
-    <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 border-dashed rounded-2xl p-5 hover:bg-white dark:hover:bg-gray-900 transition-colors">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-          {icon}
-          <span className="font-medium text-sm">{title}</span>
-        </div>
-        <span className="bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700">
-          {version}
-        </span>
-      </div>
-      <p className="text-gray-400 dark:text-gray-500 text-sm leading-relaxed">{description}</p>
     </div>
   )
 }

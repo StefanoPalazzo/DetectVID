@@ -82,8 +82,8 @@ export default function Sidebar() {
           </div>
         ) : (
           <div className="flex items-center justify-between">
-            <span className="text-gray-400 dark:text-gray-600 text-xs">v1.0.0 MVP</span>
-            <span className="text-gray-300 dark:text-gray-700 text-xs">© 2025</span>
+            <span className="text-gray-400 dark:text-gray-600 text-xs">v2.0.5 MVP</span>
+            <span className="text-gray-300 dark:text-gray-700 text-xs">© 2026</span>
           </div>
         )}
       </div>

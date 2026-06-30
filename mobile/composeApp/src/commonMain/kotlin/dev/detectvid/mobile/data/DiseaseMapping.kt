@@ -55,6 +55,19 @@ private val classMeta = mapOf(
         ),
         recommendation = "Se detectó presencia de Peronóspora (Plasmopara viticola). Aplicar fungicidas cúpricos o sistémicos específicos. La temperatura y humedad actuales favorecen el desarrollo. Revisión urgente del lote afectado.",
     ),
+    "others" to DiseaseMeta(
+        disease = "Otras",
+        diseaseKey = "others",
+        status = "No clasificada",
+        riskLevel = "Medio",
+        riskColor = "yellow",
+        urgency = "Revisión recomendada",
+        symptoms = listOf(
+            "La imagen parece mostrar síntomas que no corresponden claramente a oídio ni peronóspora.",
+            "Puede tratarse de otra enfermedad, daño fisiológico, quemadura, deficiencia nutricional o senescencia.",
+        ),
+        recommendation = "El modelo detectó un patrón fuera de las clases principales. Se recomienda tomar una foto cercana adicional y consultar con un ingeniero agrónomo antes de decidir un tratamiento.",
+    ),
 )
 
 fun buildAnalysisEnvelope(image: PickedImage, prediction: MlPredictionResponse, processingTimeMs: Int): AnalysisEnvelope {
@@ -86,7 +99,7 @@ fun buildAnalysisEnvelope(image: PickedImage, prediction: MlPredictionResponse, 
             recommendation = meta.recommendation,
         ),
         model = ModelMetadata(
-            name = prediction.modelName ?: "DetectVID-v1",
+            name = prediction.modelName ?: "EfficientNet-B0 exp44_4cls_field_eff_quality_aug",
             type = "cloud",
         ),
     )

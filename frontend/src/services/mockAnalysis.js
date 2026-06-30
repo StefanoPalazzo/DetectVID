@@ -226,7 +226,7 @@ export async function analyzeLeafImage(imageFile) {
     // Información del modelo que realizó el análisis
     // Cuando conectes el modelo real, actualizá estos valores
     model: {
-      name:    'DetectVID-Mock-v1',
+      name:    'EfficientNet-B0 exp44_4cls_field_eff_quality_aug',
       version: '1.0.0',
       type:    'mock',    // Cambiar a 'local' o 'cloud' con el modelo real
       // Nota: el modelo real podría devolver también 'architecture', 'accuracy', etc.
@@ -348,7 +348,7 @@ export function buildResultFromClassification(classKey, confidence, imageFile, p
     },
 
     model: {
-      name:    'DetectVID-v1',
+      name:    'EfficientNet-B0 exp44_4cls_field_eff_quality_aug',
       version: '1.0.0',
       type:    'real',  // 'local' | 'cloud' | 'real'
     },

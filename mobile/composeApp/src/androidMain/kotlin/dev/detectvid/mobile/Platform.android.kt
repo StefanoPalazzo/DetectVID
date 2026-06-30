@@ -173,13 +173,14 @@ actual fun AnalysisImagePreview(localImagePath: String?, remoteImageUrl: String?
     val context = LocalContext.current.applicationContext
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, localImagePath, remoteImageUrl) {
         value = withContext(Dispatchers.IO) {
-            localImagePath
+            val localBitmap = localImagePath
                 ?.let { File(context.filesDir, it) }
                 ?.takeIf { it.exists() }
                 ?.let { BitmapFactory.decodeFile(it.absolutePath) }
-                ?: remoteImageUrl
-                    ?.normalizeImageUrl()
-                    ?.let { runCatching { URL(it).openStream().use(BitmapFactory::decodeStream) }.getOrNull() }
+
+            localBitmap ?: remoteImageUrl
+                ?.normalizeImageUrl()
+                ?.let { runCatching { URL(it).openStream().use(BitmapFactory::decodeStream) }.getOrNull() }
         }
     }
 
@@ -198,12 +199,19 @@ actual fun AnalysisImagePreview(localImagePath: String?, remoteImageUrl: String?
     }
 }
 
-private fun String.normalizeImageUrl(): String =
-    when {
-        startsWith("http://") || startsWith("https://") -> this
-        startsWith("/") -> DEFAULT_BASE_URL.trimEnd('/') + this
-        else -> DEFAULT_BASE_URL.trimEnd('/') + "/" + this
+private fun String.normalizeImageUrl(): String {
+    val raw = trim()
+    val uploadsPath = raw.substringAfter("://", raw)
+        .substringAfter('/', missingDelimiterValue = "")
+        .let { if (it.startsWith("uploads/")) "/$it" else null }
+    if (uploadsPath != null) return DEFAULT_BASE_URL.trimEnd('/') + uploadsPath
+
+    return when {
+        raw.startsWith("http://") || raw.startsWith("https://") -> raw
+        raw.startsWith("/") -> DEFAULT_BASE_URL.trimEnd('/') + raw
+        else -> DEFAULT_BASE_URL.trimEnd('/') + "/" + raw
     }
+}
 
 @Composable
 actual fun NativeMapPreview(analyses: List<LocalAnalysis>, modifier: Modifier) {

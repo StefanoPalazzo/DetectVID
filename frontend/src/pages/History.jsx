@@ -31,6 +31,7 @@ import { es } from 'date-fns/locale'
 
 import { getAnalyses, deleteAnalysis, deleteAnalyses } from '../services/analysisService'
 import { HISTORY_FILTERS, filterAnalyses } from '../utils/analysisMetrics'
+import { normalizeImageUrl } from '../utils/imageUrl'
 
 // ── Mapa de colores por nivel de riesgo ──────────────────────────────────────
 const RISK_COLORS = {
@@ -160,7 +161,7 @@ function PhotoModal({ analysis, onClose }) {
 
           {/* Imagen */}
           <img
-            src={analysis.imageUrl}
+            src={normalizeImageUrl(analysis.imageUrl)}
             alt={`Análisis: ${analysis.diseaseName}`}
             className="w-full max-h-[70vh] object-contain bg-gray-100 dark:bg-gray-950"
           />
@@ -264,7 +265,7 @@ function AnalysisRow({ analysis, onPhotoClick, onDelete }) {
       >
         {analysis.imageUrl ? (
           <img
-            src={analysis.imageUrl}
+            src={normalizeImageUrl(analysis.imageUrl)}
             alt={analysis.diseaseName}
             className="w-full h-full object-cover"
           />

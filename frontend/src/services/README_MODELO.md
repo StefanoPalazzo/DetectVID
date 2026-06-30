@@ -304,7 +304,7 @@ podés mergear los síntomas del modelo con los de `DISEASE_SCENARIOS`.
   },
 
   model: {
-    name: "DetectVID-v1",
+    name: "EfficientNet-B0 exp44_4cls_field_eff_quality_aug",
     version: "1.0.0",
     type: "real"
   }

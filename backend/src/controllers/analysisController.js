@@ -67,7 +67,7 @@ async function create(req, res) {
         // Metadata
         analysisId:     result.analysisId,
         processingTime: result.processingTime,
-        modelName:      result.model?.name || 'DetectVID-Mock-v1',
+        modelName:      result.model?.name || 'EfficientNet-B0 exp44_4cls_field_eff_quality_aug',
       },
     })
 

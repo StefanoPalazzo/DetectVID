@@ -92,7 +92,7 @@ const CLASS_META = {
       'actuales favorecen el desarrollo. Revisión urgente del lote afectado.',
   },
   others: {
-    disease:     'Otra enfermedad o daño',
+    disease:     'Otras',
     diseaseKey:  'others',
     status:      'No clasificada',
     riskLevel:   'Medio',
@@ -197,7 +197,7 @@ export async function analyzeLeafImage(imageFile) {
     },
 
     model: {
-      name:    data.model_name ?? 'DetectVID-v1',
+      name:    data.model_name ?? 'EfficientNet-B0 exp44_4cls_field_eff_quality_aug',
       version: '1.0.0',
       type:    'local',
     },

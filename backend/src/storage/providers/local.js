@@ -40,8 +40,9 @@ async function upload(buffer, options = {}) {
   const filepath = path.join(dir, filename)
   await fs.promises.writeFile(filepath, buffer)
 
-  const baseUrl  = (process.env.LOCAL_STORAGE_URL || '').trim().replace(/\/$/, '')
-  const url      = `${baseUrl}/uploads/${subfolder}/${filename}`
+  const publicPath = `/uploads/${subfolder}/${filename}`
+  const baseUrl    = getPublicBaseUrl()
+  const url        = baseUrl ? `${baseUrl}${publicPath}` : publicPath
   const publicId = `${subfolder}/${filename}`
 
   return { url, publicId, provider: 'local' }
@@ -60,8 +61,15 @@ async function deleteFile(publicId) {
 }
 
 function getUrl(publicId) {
-  const baseUrl = (process.env.LOCAL_STORAGE_URL || '').trim().replace(/\/$/, '')
-  return `${baseUrl}/uploads/${publicId}`
+  const publicPath = `/uploads/${publicId}`
+  const baseUrl = getPublicBaseUrl()
+  return baseUrl ? `${baseUrl}${publicPath}` : publicPath
+}
+
+function getPublicBaseUrl() {
+  return (process.env.LOCAL_STORAGE_URL || process.env.PUBLIC_BASE_URL || '')
+    .trim()
+    .replace(/\/$/, '')
 }
 
 module.exports = { upload, delete: deleteFile, getUrl, provider: 'local' }

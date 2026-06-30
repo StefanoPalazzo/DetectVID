@@ -15,6 +15,14 @@
 
 const jwt = require('jsonwebtoken')
 
+function shouldUseSecureCookies() {
+  if (process.env.COOKIE_SECURE != null) {
+    return String(process.env.COOKIE_SECURE).toLowerCase() === 'true'
+  }
+
+  return process.env.NODE_ENV === 'production'
+}
+
 // ── Generar token ─────────────────────────────────────────────────────────────
 /**
  * Crea un JWT firmado con los datos del usuario.
@@ -53,7 +61,7 @@ function verifyToken(token) {
 function setTokenCookie(res, token) {
   res.cookie('auth_token', token, {
     httpOnly: true,                                        // JS no puede leerla
-    secure: process.env.NODE_ENV === 'production',        // Solo HTTPS en prod
+    secure: shouldUseSecureCookies(),                       // HTTPS only when explicitly enabled
     sameSite: 'lax',                                      // Protección CSRF básica
     maxAge: 7 * 24 * 60 * 60 * 1000,                     // 7 días en milisegundos
   })
@@ -67,7 +75,7 @@ function setTokenCookie(res, token) {
 function clearTokenCookie(res) {
   res.clearCookie('auth_token', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookies(),
     sameSite: 'lax',
   })
 }

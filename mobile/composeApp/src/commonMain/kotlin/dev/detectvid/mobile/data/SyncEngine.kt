@@ -43,7 +43,7 @@ class SyncEngine(
                         .also { onState(store.savePrediction(item.id, it)) }
                 }
                 val saved = api.saveAnalysis(image, envelope)
-                onState(store.markSynced(item.id, saved.analysis?.id))
+                onState(store.markSynced(item.id, saved.analysis?.id, saved.analysis?.imageUrl))
             }.onFailure { error ->
                 onState(store.markStatus(item.id, SyncStatus.Failed, error.message ?: "Sync failed"))
             }

@@ -122,6 +122,7 @@ fun App() {
         var message by remember { mutableStateOf<String?>(null) }
         var working by remember { mutableStateOf(false) }
         var syncInProgress by remember { mutableStateOf(false) }
+        var wasOffline by remember { mutableStateOf(false) }
         var capturedCookie by remember { mutableStateOf<String?>(null) }
         var selectedTab by remember { mutableStateOf(MobileTab.Dashboard) }
         var showCameraChoices by remember { mutableStateOf(false) }
@@ -149,9 +150,16 @@ fun App() {
             if (showMessage) message = "Sincronizando datos del viñedo..."
             runCatching {
                 state = syncEngine.syncAll { newState -> state = newState }
-                if (showMessage) message = "Sincronización completa"
+            }.onSuccess {
+                if (showMessage || wasOffline) {
+                    message = if (wasOffline) "Ahora tienes conexión. Sincronización completa." else "Sincronización completa."
+                }
+                wasOffline = false
             }.onFailure {
-                if (showMessage) message = "No se pudo sincronizar: ${it.message ?: "error desconocido"}"
+                wasOffline = true
+                if (showMessage || message == null) {
+                    message = "Estás sin conexión. Guardamos tus capturas para sincronizarlas después."
+                }
             }
             working = false
             syncInProgress = false
