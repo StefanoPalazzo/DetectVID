@@ -225,9 +225,17 @@ async function deleteMany(req, res) {
  */
 function buildStoredImageName(analysisId, file) {
   const safeId = String(analysisId || `analysis-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '-')
-  const originalExt = file?.originalname?.match(/\.[a-zA-Z0-9]+$/)?.[0]?.toLowerCase()
+  const detectedExt = detectImageExtension(file?.buffer)
   const mimeExt = file?.mimetype === 'image/png' ? '.png' : file?.mimetype === 'image/webp' ? '.webp' : '.jpg'
-  return `${safeId}-${Date.now()}${originalExt || mimeExt}`
+  return `${safeId}-${Date.now()}${detectedExt || mimeExt}`
+}
+
+function detectImageExtension(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null
+  if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return '.jpg'
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return '.png'
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return '.webp'
+  return null
 }
 
 function extractPublicId(imageUrl, provider) {

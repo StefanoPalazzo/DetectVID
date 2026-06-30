@@ -13,6 +13,7 @@ const cookieParser = require('cookie-parser')
 const morgan       = require('morgan')
 const rateLimit    = require('express-rate-limit')
 const path         = require('path')
+const fs           = require('fs')
 
 const prisma         = require('./lib/prisma')
 const authRoutes     = require('./routes/authRoutes')
@@ -84,7 +85,12 @@ app.use('/api/fincas', fincaRoutes)
 
 // Servir imágenes subidas con el provider "local"
 // En producción con Cloudinary este middleware es ignorado (las URLs apuntan a CDN)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  setHeaders: (res, filePath) => {
+    const detected = detectImageContentType(filePath)
+    if (detected) res.setHeader('Content-Type', detected)
+  },
+}))
 
 // ── Manejo de rutas no encontradas ────────────────────────────────────────────
 app.use((req, res) => {
@@ -114,3 +120,19 @@ app.listen(PORT, async () => {
     process.exit(1)
   }
 })
+
+function detectImageContentType(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r')
+    const buffer = Buffer.alloc(12)
+    fs.readSync(fd, buffer, 0, buffer.length, 0)
+    fs.closeSync(fd)
+
+    if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
+    if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+    if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
+  } catch {
+    // Si falla la detección, Express conserva el Content-Type por extensión.
+  }
+  return null
+}
