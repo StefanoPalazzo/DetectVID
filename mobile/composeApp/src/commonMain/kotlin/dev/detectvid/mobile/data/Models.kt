@@ -17,8 +17,23 @@ data class MobileState(
     val authCookie: String? = null,
     val user: User? = null,
     val analyses: List<LocalAnalysis> = emptyList(),
+    val fincas: List<Finca> = emptyList(),
     val darkMode: Boolean = true,
     val pendingDeletes: List<PendingDelete> = emptyList(),
+)
+
+@Serializable
+data class Finca(
+    val id: String,
+    val name: String,
+    val color: String = "#16a34a",
+    val coordinates: List<FincaCoordinate> = emptyList(),
+)
+
+@Serializable
+data class FincaCoordinate(
+    val lat: Double,
+    val lng: Double,
 )
 
 @Serializable
@@ -137,6 +152,12 @@ data class ListAnalysesResponse(
     val analyses: List<RemoteAnalysis> = emptyList(),
     val total: Int = 0,
     val page: Int = 1,
+)
+
+@Serializable
+data class ListFincasResponse(
+    val success: Boolean,
+    val fincas: List<Finca> = emptyList(),
 )
 
 @Serializable

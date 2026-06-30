@@ -93,6 +93,12 @@ class DetectVidApi(
         return response.body()
     }
 
+    suspend fun listFincas(): ListFincasResponse {
+        val response = client.get(url("/api/fincas")) { authHeader() }
+        ensureSuccess(response.status)
+        return response.body()
+    }
+
     suspend fun deleteAnalysis(remoteId: String) {
         val response = client.delete(url("/api/analyses/$remoteId")) { authHeader() }
         ensureSuccess(response.status)

@@ -125,6 +125,10 @@ class LocalStore(
         state
     }
 
+    suspend fun replaceFincas(remoteFincas: List<Finca>): MobileState = update { current ->
+        current.copy(fincas = remoteFincas)
+    }
+
     suspend fun pendingAnalyses(): List<LocalAnalysis> = mutex.withLock {
         ensureLoadedLocked()
         state.analyses.filter { it.localImagePath != null && it.status in setOf(SyncStatus.Queued, SyncStatus.Failed) }

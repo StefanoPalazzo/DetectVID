@@ -2,6 +2,7 @@ package dev.detectvid.mobile.platform
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import dev.detectvid.mobile.data.Finca
 import dev.detectvid.mobile.data.LocalAnalysis
 import dev.detectvid.mobile.data.PickedImage
 
@@ -28,7 +29,7 @@ expect fun rememberPhotoSource(): PhotoSource
 expect fun AnalysisImagePreview(localImagePath: String?, remoteImageUrl: String?, contentDescription: String?, modifier: Modifier)
 
 @Composable
-expect fun NativeMapPreview(analyses: List<LocalAnalysis>, modifier: Modifier)
+expect fun NativeMapPreview(analyses: List<LocalAnalysis>, fincas: List<Finca>, modifier: Modifier)
 
 expect fun platformHttpClient(): io.ktor.client.HttpClient
 

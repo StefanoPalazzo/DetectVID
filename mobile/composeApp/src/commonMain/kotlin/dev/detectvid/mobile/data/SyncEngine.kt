@@ -12,7 +12,8 @@ class SyncEngine(
 
         syncPending(onState)
         syncDeletes(onState)
-        return pullRemote(onState)
+        val synced = pullRemote(onState)
+        return pullFincas(onState).copy(analyses = synced.analyses)
     }
 
     suspend fun syncDeletes(onState: suspend (MobileState) -> Unit = {}) {
@@ -53,6 +54,13 @@ class SyncEngine(
     suspend fun pullRemote(onState: suspend (MobileState) -> Unit = {}): MobileState {
         val response = api.listAnalyses()
         val state = store.upsertRemote(response.analyses)
+        onState(state)
+        return state
+    }
+
+    suspend fun pullFincas(onState: suspend (MobileState) -> Unit = {}): MobileState {
+        val response = api.listFincas()
+        val state = store.replaceFincas(response.fincas)
         onState(state)
         return state
     }

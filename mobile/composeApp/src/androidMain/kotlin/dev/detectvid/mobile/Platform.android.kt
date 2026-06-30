@@ -27,6 +27,7 @@ import androidx.core.content.FileProvider
 import dev.detectvid.mobile.data.LocalAnalysis
 import dev.detectvid.mobile.data.PickedImage
 import dev.detectvid.mobile.data.DEFAULT_BASE_URL
+import dev.detectvid.mobile.data.Finca
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.Dispatchers
@@ -214,8 +215,8 @@ private fun String.normalizeImageUrl(): String {
 }
 
 @Composable
-actual fun NativeMapPreview(analyses: List<LocalAnalysis>, modifier: Modifier) {
-    val html = remember(analyses) { vineyardMapHtml(analyses) }
+actual fun NativeMapPreview(analyses: List<LocalAnalysis>, fincas: List<Finca>, modifier: Modifier) {
+    val html = remember(analyses, fincas) { vineyardMapHtml(analyses, fincas) }
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -229,7 +230,7 @@ actual fun NativeMapPreview(analyses: List<LocalAnalysis>, modifier: Modifier) {
     )
 }
 
-private fun vineyardMapHtml(analyses: List<LocalAnalysis>): String {
+private fun vineyardMapHtml(analyses: List<LocalAnalysis>, fincas: List<Finca>): String {
     val points = analyses.filter { it.latitude != null && it.longitude != null }.joinToString(",") { item ->
         val result = item.result?.result
         val color = when {
@@ -239,6 +240,10 @@ private fun vineyardMapHtml(analyses: List<LocalAnalysis>): String {
             else -> "#6b7280"
         }
         """{lat:${item.latitude},lng:${item.longitude},color:"$color",label:"${(result?.disease ?: item.fileName).htmlEscape()}",confidence:"${result?.confidence ?: 0}%"}"""
+    }
+    val fincaPolygons = fincas.filter { it.coordinates.size >= 3 }.joinToString(",") { finca ->
+        val coords = finca.coordinates.joinToString(",") { coord -> "[${coord.lat},${coord.lng}]" }
+        """{name:"${finca.name.htmlEscape()}",color:"${finca.color.htmlEscape()}",coords:[$coords]}"""
     }
     return """
         <!doctype html>
@@ -268,15 +273,27 @@ private fun vineyardMapHtml(analyses: List<LocalAnalysis>): String {
           <div id="map"></div>
           <script>
             const points = [$points];
-            const center = points.length ? [points[0].lat, points[0].lng] : [-32.8895, -68.8458];
+            const fincas = [$fincaPolygons];
+            const firstFincaPoint = fincas.length && fincas[0].coords.length ? fincas[0].coords[0] : null;
+            const center = points.length ? [points[0].lat, points[0].lng] : (firstFincaPoint || [-32.8895, -68.8458]);
             points.forEach((p,i) => {
               const d = document.createElement('div'); d.className='dot'; d.style.background=p.color;
               d.style.left=(26+(i*17)%52)+'%'; d.style.top=(34+(i*13)%34)+'%'; document.getElementById('fallback').appendChild(d);
             });
             const map = L.map('map', { zoomControl:false }).setView(center, points.length ? 15 : 11);
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OSM' }).addTo(map);
-            points.forEach(p => L.circle([p.lat,p.lng], { radius:25, color:p.color, fillColor:p.color, fillOpacity:0.35, weight:2 })
-              .bindPopup('<b>'+p.label+'</b><br/>Confianza '+p.confidence).addTo(map));
+            const bounds = [];
+            fincas.forEach(f => {
+              const polygon = L.polygon(f.coords, { color:f.color || '#16a34a', fillColor:f.color || '#16a34a', fillOpacity:0.22, weight:2 })
+                .bindPopup('<b>'+f.name+'</b>').addTo(map);
+              f.coords.forEach(c => bounds.push(c));
+            });
+            points.forEach(p => {
+              bounds.push([p.lat,p.lng]);
+              L.circle([p.lat,p.lng], { radius:25, color:p.color, fillColor:p.color, fillOpacity:0.35, weight:2 })
+                .bindPopup('<b>'+p.label+'</b><br/>Confianza '+p.confidence).addTo(map);
+            });
+            if (bounds.length > 1) map.fitBounds(bounds, { padding:[24,24], maxZoom:16 });
           </script>
         </body>
         </html>

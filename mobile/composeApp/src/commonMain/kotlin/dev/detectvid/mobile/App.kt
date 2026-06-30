@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -458,6 +459,7 @@ private fun MapScreen(state: MobileState, onDeleteAnalysis: (String) -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     NativeMapPreview(
                         analyses = state.analyses,
+                        fincas = state.fincas,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(300.dp)
@@ -465,7 +467,7 @@ private fun MapScreen(state: MobileState, onDeleteAnalysis: (String) -> Unit) {
                     )
                     MapLegend()
                     Text(
-                        "El dibujo de fincas sigue disponible en la web. En mobile se muestran el mapa y las zonas GPS manteniendo la sincronización.",
+                        "Las fincas se crean y editan desde la web. En mobile se visualizan las zonas sincronizadas y los análisis con GPS.",
                         color = Slate600,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -835,7 +837,7 @@ private fun BottomVineNavigation(selectedTab: MobileTab, working: Boolean, onTab
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(containerColor = Vine700),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp).size(64.dp),
-            contentPadding = ButtonDefaults.ContentPadding,
+            contentPadding = PaddingValues(0.dp),
         ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CameraGlyph(modifier = Modifier.size(29.dp))
@@ -847,22 +849,20 @@ private fun BottomVineNavigation(selectedTab: MobileTab, working: Boolean, onTab
 @Composable
 private fun CameraGlyph(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
-        val stroke = 2.4.dp.toPx()
         drawRoundRect(
             color = Color.White,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.28f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.58f),
-            cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
-            style = Stroke(stroke),
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.10f, size.height * 0.30f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.80f, size.height * 0.56f),
+            cornerRadius = CornerRadius(7.dp.toPx(), 7.dp.toPx()),
         )
         drawRoundRect(
             color = Color.White,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.31f, size.height * 0.15f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.38f, size.height * 0.18f),
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.30f, size.height * 0.17f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.40f, size.height * 0.22f),
             cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
-            style = Stroke(stroke),
         )
-        drawCircle(color = Color.White, radius = size.minDimension * 0.17f, center = center, style = Stroke(stroke))
+        drawCircle(color = Vine700, radius = size.minDimension * 0.18f, center = center)
+        drawCircle(color = Color.White, radius = size.minDimension * 0.09f, center = center)
     }
 }
 
