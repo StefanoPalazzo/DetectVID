@@ -5,7 +5,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-detectvid2026}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-detectvid}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -49,11 +49,11 @@ services:
     expose:
       - "3001"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-detectvid2026}@db:5432/${POSTGRES_DB:-detectvid}?schema=public
-      - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_detectvid}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-detectvid}?schema=public
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
       - NODE_ENV=${NODE_ENV:-production}
-      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
       - ML_API_URL=http://ml:8000
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
       - LOCAL_STORAGE_PATH=/app/uploads

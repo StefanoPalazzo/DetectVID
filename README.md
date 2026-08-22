@@ -56,6 +56,7 @@ Variables principales:
 |---|---|
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Base PostgreSQL |
 | `JWT_SECRET` | Firma JWT; usar un valor largo y aleatorio |
+| `COOKIE_SECURE` | `false` solo para HTTP local; usar `true` con HTTPS |
 | `PUBLIC_BASE_URL` | URL pública usada para imágenes locales, ej. `https://detectvid.example.com` |
 | `FRONTEND_URLS` | Orígenes CORS permitidos separados por coma |
 | `STORAGE_PROVIDER` | `local` para VM, `cloudinary` opcional |
@@ -71,6 +72,10 @@ cp backend/.env.example backend/.env
 ```bash
 docker compose up -d --build
 ```
+
+Compose exige `POSTGRES_PASSWORD` y `JWT_SECRET`; no incluye credenciales
+predeterminadas. Para desarrollo local, copia `.env.example` a `.env` y completa
+esos valores antes de iniciar los servicios.
 
 Servicios:
 
