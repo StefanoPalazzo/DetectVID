@@ -1,106 +1,106 @@
-# DetectVID — detección inteligente de enfermedades en vid
+# DetectVID — intelligent grapevine disease detection
 
-DetectVID es una plataforma AgriTech para monitorear viñedos mediante análisis de imágenes de hojas de vid. Permite subir/capturar una foto, ejecutar inferencia con un modelo de visión computacional, guardar el diagnóstico, revisar historial, ver métricas y ubicar análisis/fincas en un mapa.
+**English** | [Español](README.es.md)
 
-Proyecto de tesis — Universidad de Mendoza — Stefano Palazzo.
+DetectVID is an AgriTech platform for monitoring vineyards through image analysis of grapevine leaves. Users can upload or capture a photo, run computer-vision inference, save the diagnosis, review historical results and metrics, and locate analyses and vineyards on a map.
 
-## Estado del MVP
+Computer Engineering capstone project — University of Mendoza — Stefano Palazzo.
 
-El MVP actual incluye:
+## Architecture
 
-- Autenticación con JWT en cookie HttpOnly.
-- Frontend web React/Vite protegido por sesión.
-- Backend Express + Prisma + PostgreSQL.
-- API ML FastAPI/PyTorch reemplazable por otro motor de inferencia.
-- Subida de imágenes con validación y storage local persistente o Cloudinary.
-- Historial con miniaturas, filtros, agrupación por día/semana/mes y borrado.
-- Dashboard con métricas calculadas desde análisis reales.
-- Mapa Leaflet con fincas/polígonos y puntos GPS de análisis.
-- App mobile Kotlin Multiplatform con flujo offline-first y sincronización.
-- Docker Compose para VM/local.
+![DetectVID system architecture](docs/assets/detectvid-architecture.png)
 
-## Arquitectura
+## MVP status
 
-![Arquitectura del sistema DetectVID](docs/assets/detectvid-architecture.png)
+The current MVP includes:
 
-## Stack
+- JWT authentication stored in an HttpOnly cookie.
+- Session-protected React/Vite web application.
+- Express backend with Prisma and PostgreSQL.
+- Replaceable FastAPI/PyTorch ML inference service.
+- Validated image uploads with persistent local storage or Cloudinary.
+- Analysis history with thumbnails, filters, time-based grouping, and deletion.
+- Dashboard metrics calculated from stored analyses.
+- Leaflet map with vineyard polygons and geolocated analysis points.
+- Kotlin Multiplatform mobile app with offline-first capture and synchronization.
+- Docker Compose deployment for a VM or local environment.
 
-| Capa | Tecnología |
+## Technology stack
+
+| Layer | Technology |
 |---|---|
 | Web | React 18, Vite 5, Tailwind CSS, React Router, Framer Motion, Leaflet |
 | Backend | Node.js 20, Express, Prisma, PostgreSQL, JWT, bcrypt, multer |
 | ML API | Python 3.10, FastAPI, PyTorch, torchvision, Pillow |
-| Mobile | Kotlin Multiplatform, Compose Multiplatform, Android/iOS shell |
-| Deploy | Docker Compose, Nginx reverse proxy |
+| Mobile | Kotlin Multiplatform, Compose Multiplatform, Android/iOS shells |
+| Deployment | Docker Compose, Nginx reverse proxy |
 
-## Estructura
+## Repository structure
 
 ```text
 DetectVID/
-├── frontend/          # SPA web React + Nginx config
-├── backend/           # API Express, auth, análisis, fincas, Prisma
-├── ml/                # Entrenamiento, evaluación y API FastAPI de inferencia
-├── mobile/            # App KMP Android/iOS offline-first
-├── docs/              # Arquitectura y despliegue
-├── docker-compose.yml # Stack local/VM
-└── .env.example       # Variables para Docker/VM
+├── frontend/          # React SPA and Nginx configuration
+├── backend/           # Express API, authentication, analyses, vineyards, Prisma
+├── ml/                # Training, evaluation, and FastAPI inference service
+├── mobile/            # Offline-first KMP app for Android and iOS
+├── docs/              # Architecture and deployment documentation
+├── docker-compose.yml # Local/VM stack
+└── .env.example       # Docker/VM environment template
 ```
 
-## Variables de entorno
+## Environment variables
 
-Para Docker/VM:
+For Docker or VM deployment:
 
 ```bash
 cp .env.example .env
 ```
 
-Variables principales:
+Main variables:
 
-| Variable | Uso |
+| Variable | Purpose |
 |---|---|
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Base PostgreSQL |
-| `JWT_SECRET` | Firma JWT; usar un valor largo y aleatorio |
-| `COOKIE_SECURE` | `false` solo para HTTP local; usar `true` con HTTPS |
-| `PUBLIC_BASE_URL` | URL pública usada para imágenes locales, ej. `https://detectvid.example.com` |
-| `FRONTEND_URLS` | Orígenes CORS permitidos separados por coma |
-| `STORAGE_PROVIDER` | `local` para VM, `cloudinary` opcional |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | PostgreSQL configuration |
+| `JWT_SECRET` | JWT signing key; use a long, random value |
+| `COOKIE_SECURE` | Use `false` only for local HTTP and `true` with HTTPS |
+| `PUBLIC_BASE_URL` | Public URL used for locally stored images, e.g. `https://detectvid.example.com` |
+| `FRONTEND_URLS` | Comma-separated CORS origins |
+| `STORAGE_PROVIDER` | `local` for the VM or optional `cloudinary` storage |
 
-Para desarrollo backend puro:
+For standalone backend development:
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-## Ejecutar con Docker
+## Run with Docker
 
 ```bash
 docker compose up -d --build
 ```
 
-Compose exige `POSTGRES_PASSWORD` y `JWT_SECRET`; no incluye credenciales
-predeterminadas. Para desarrollo local, copia `.env.example` a `.env` y completa
-esos valores antes de iniciar los servicios.
+Compose requires `POSTGRES_PASSWORD` and `JWT_SECRET`; it does not provide default credentials. For local development, copy `.env.example` to `.env` and set both values before starting the services.
 
-Servicios:
+Services:
 
 - Frontend/Nginx: http://localhost
-- Backend health: http://localhost/api/auth/me requiere sesión; health directo dentro de red: `backend:3001/health`
-- ML health vía proxy: http://localhost/api/ml/health
-- PostgreSQL: contenedor interno `db`
+- Backend health: http://localhost/api/auth/me requires a session; internal health endpoint: `backend:3001/health`
+- ML health through Nginx: http://localhost/api/ml/health
+- PostgreSQL: internal `db` container
 
-Ver logs:
+Follow logs:
 
 ```bash
 docker compose logs -f
 ```
 
-Detener:
+Stop the stack:
 
 ```bash
 docker compose down
 ```
 
-## Ejecutar en desarrollo local
+## Run locally without Docker
 
 ### Backend
 
@@ -138,44 +138,44 @@ npm run dev
 
 Frontend: http://localhost:5173
 
-## Flujo de análisis
+## Analysis flow
 
-1. El usuario selecciona una imagen JPG/PNG/WEBP.
-2. La web valida tipo/tamaño y muestra preview.
-3. Se intenta extraer GPS EXIF o ubicación del dispositivo.
-4. `frontend/src/services/mlService.js` manda la imagen a `/api/ml/predict`.
-5. La ML API devuelve clase, confianza, margen e incertidumbre.
-6. El frontend muestra resultado, riesgo y recomendación.
-7. `frontend/src/services/analysisService.js` guarda imagen + resultado en `/api/analyses`.
-8. Historial, dashboard y mapa consumen esos análisis guardados.
+1. The user selects a JPG, PNG, or WEBP image.
+2. The web application validates its type and size and displays a preview.
+3. The application attempts to obtain EXIF GPS data or the device location.
+4. `frontend/src/services/mlService.js` sends the image to `/api/ml/predict`.
+5. The ML API returns the predicted class, confidence, top-class margin, and uncertainty status.
+6. The frontend presents the diagnosis, risk level, and recommendation.
+7. `frontend/src/services/analysisService.js` stores the image and result through `/api/analyses`.
+8. The history, dashboard, and map consume the persisted analyses.
 
-## Conectar o reemplazar modelo real
+## Integrating or replacing the model
 
-La frontera estable está en:
+The stable integration boundary consists of:
 
-- Web: `frontend/src/services/mlService.js`
-- ML API: `ml/api/services/model_service.py`
-- Contrato respuesta: `ml/api/schemas/prediction.py`
+- Web client: `frontend/src/services/mlService.js`
+- ML service: `ml/api/services/model_service.py`
+- Response contract: `ml/api/schemas/prediction.py`
 
-Mientras el endpoint devuelva `predicted_class`, `confidence`, `probabilities`, `is_uncertain` y `top1_margin`, el frontend no necesita cambios.
+As long as the inference endpoint returns `predicted_class`, `confidence`, `probabilities`, `is_uncertain`, and `top1_margin`, the frontend does not need to change.
 
 ## Mobile
 
-Abrir `mobile/` en Android Studio para Android. Para iOS, abrir:
+Open `mobile/` in Android Studio for Android development. For iOS, open:
 
 ```text
 mobile/iosApp/DetectVID.xcodeproj
 ```
 
-La app mobile guarda imágenes en sandbox local, mantiene cola offline y sincroniza con:
+The mobile application stores images in its local sandbox, maintains an offline queue, and synchronizes with:
 
 - `POST /api/ml/predict`
 - `POST /api/analyses`
 - `GET /api/analyses?limit=100`
 
-Más detalles en `mobile/README.md`.
+See `mobile/README.md` for additional details.
 
-## Checks útiles
+## Useful checks
 
 ```bash
 npm --prefix frontend run build
@@ -184,13 +184,13 @@ python3 -m py_compile ml/src/*.py ml/api/services/*.py ml/api/*.py
 cd mobile && ./gradlew --no-daemon :composeApp:assembleDebug :composeApp:compileKotlinIosSimulatorArm64
 ```
 
-## Despliegue en VM
+## VM deployment
 
-Ver `docs/DEPLOYMENT_VM.md`.
+See `docs/DEPLOYMENT_VM.md`.
 
-## Documentación adicional
+## Additional documentation
 
-- `docs/ARCHITECTURE.md` — arquitectura general.
-- `docs/DEPLOYMENT_VM.md` — guía paso a paso para VM.
-- `docs/IMPLEMENTATION_REPORT.md` — cambios recientes y validación.
-- `ml/docs/EXPERIMENTS.md` — guía de experimentos ML.
+- `docs/ARCHITECTURE.md` — complete system architecture.
+- `docs/DEPLOYMENT_VM.md` — step-by-step VM deployment guide.
+- `docs/IMPLEMENTATION_REPORT.md` — recent implementation and validation report.
+- `ml/docs/EXPERIMENTS.md` — ML experiment guide.
