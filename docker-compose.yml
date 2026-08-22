@@ -33,6 +33,7 @@ services:
     environment:
       - ENVIRONMENT=production
       - OMP_NUM_THREADS=4
+      # exp46 won the internal validation protocol; exp44 remains the existing deployment candidate after a limited field sanity-check.
       - MODEL_EXPERIMENT_ID=${MODEL_EXPERIMENT_ID:-exp44_4cls_field_eff_quality_aug}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/ml/health', timeout=5)"]

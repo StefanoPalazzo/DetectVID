@@ -9,7 +9,7 @@ Kotlin Multiplatform mobile app for DetectVID. It shares the UI and offline-firs
 - Imports an existing image from the native photo/file picker.
 - Stores images inside the app sandbox immediately, before any network call.
 - Keeps a local JSON-backed queue at `detectvid_state.json` plus image files under `images/`.
-- Retries sync automatically every 30 seconds while the app is open.
+- Retries sync automatically every 30 seconds while the app is open; no background synchronization is guaranteed.
 - Syncs pending photos with the existing web data flow:
   1. `POST /api/ml/predict` with multipart field `file`.
   2. Maps the ML response to the same result envelope used by the React app.
@@ -59,17 +59,9 @@ cd "$SRCROOT/.."
 
 For physical iPhone testing, select your Apple Development Team in Xcode signing settings.
 
-The app allows HTTP traffic because the current server is reachable at `http://192.168.3.231` over the private ZeroTier/OpenStack network.
+## Server endpoint
 
-## Default server
-
-The default base URL is:
-
-```text
-http://192.168.3.231
-```
-
-It can be changed from the app UI without rebuilding.
+The mobile endpoint is compile-time configured in the app source (`Models.kt` and `App.kt`). There is no in-app server configuration; changing the endpoint requires a code change and rebuild.
 
 ## Verification performed here
 

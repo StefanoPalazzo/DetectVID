@@ -131,18 +131,13 @@ El backend ejecuta `prisma migrate deploy` al arrancar.
 
 ## 10. Migraciones y seed
 
-El contenedor backend aplica migraciones automáticamente. Para cargar el usuario demo/admin:
+El contenedor backend aplica migraciones automáticamente. Para crear el usuario admin del seed, proveer credenciales explícitamente en el comando:
 
 ```bash
-docker compose exec backend npm run db:seed
+docker compose exec -e SEED_ADMIN_EMAIL -e SEED_ADMIN_PASSWORD backend npm run db:seed
 ```
 
-Credencial demo del seed:
-
-- email: `admin@detectvid.com`
-- password: `Admin1234!`
-
-Cambiar o eliminar en producción.
+Antes de ejecutarlo, exportar `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` en la shell. El seed falla si falta alguna de las dos; no tiene credenciales predeterminadas.
 
 ## 11. Verificar funcionamiento
 
@@ -209,14 +204,10 @@ Revisar `POSTGRES_*` y `DATABASE_URL` construida por Compose.
 
 ## 13. Estado actual de demo/tesis
 
-Para la demo actual, la VM quedó preparada para funcionar en red privada/ZeroTier:
+- El usuario admin de demo se crea solo si se proveen `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` al ejecutar el seed.
+- El endpoint de Mobile KMP está configurado en tiempo de compilación en el código fuente de la app. No hay configuración dentro de la app: para cambiarlo, hay que modificar el código y recompilar.
 
-- URL VM privada: `http://10.201.0.138`
-- Usuario demo: `admin@detectvid.com`
-- Password demo: `Admin1234!`
-- Mobile KMP apunta por defecto a `http://10.201.0.138`.
-
-Importante: esto no reemplaza un dominio público. Si el teléfono no está en ZeroTier o la VM no recibe una IP pública enrutable, iOS/Android no van a poder llegar al backend desde internet normal.
+Importante: esto no reemplaza un dominio público. Si el teléfono no puede llegar al backend mediante una ruta de red enrutable, iOS/Android no van a poder conectarse desde internet normal.
 
 ## 14. Producción opcional
 

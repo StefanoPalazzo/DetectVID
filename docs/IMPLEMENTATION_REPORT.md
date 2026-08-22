@@ -120,11 +120,11 @@ docker compose config
 
 ## Issue externo pendiente
 
-- Dominio público estable: la VM actual responde por red privada/ZeroTier, pero no tiene salida DNS/internet para levantar ella sola un túnel Cloudflare estable. La app queda lista para demo por `http://10.201.0.138`; acceso desde internet normal requiere IP pública enrutable, VPS puente, Rancher/Kubernetes funcional o tunnel ejecutado desde una máquina con internet.
+- Dominio público estable: la VM actual responde por red privada/ZeroTier, pero no tiene salida DNS/internet para levantar ella sola un túnel Cloudflare estable. El acceso de demo depende de la ruta privada actualmente provisionada; el acceso desde internet normal requiere IP pública enrutable, VPS puente, Rancher/Kubernetes funcional o un túnel ejecutado desde una máquina con internet.
 
 ## Para presentar
 
-1. Abrir `http://10.201.0.138` desde un dispositivo conectado a ZeroTier.
-2. Login demo: `admin@detectvid.com` / `Admin1234!`.
+1. Abrir la aplicación mediante la ruta privada actualmente provisionada desde un dispositivo conectado a ZeroTier.
+2. Crear el usuario de demo con `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` antes del login.
 3. Mostrar Dashboard, Historial, Mapa, Análisis y app mobile apuntando a la misma VM.
 4. Si necesitás iPhone sin ZeroTier, hace falta resolver infraestructura pública real antes de la presentación.

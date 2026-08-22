@@ -50,6 +50,8 @@ Class index mapping:
 
 If the selection criterion is the reproducible validation protocol, `exp46_4cls_field_eff_under_repro_seed42` is the formal winner.
 
+The configured deployment default remains `exp44_4cls_field_eff_quality_aug`. This is the existing product deployment decision, informed by the limited `mis-hojas` field sanity-check; it does not mean exp44 won the formal selection or field validation.
+
 Rationale:
 
 - lowest validation loss among all new reproducible field experiments;

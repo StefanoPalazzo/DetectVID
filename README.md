@@ -18,11 +18,11 @@ The current MVP includes:
 - Session-protected React/Vite web application.
 - Express backend with Prisma and PostgreSQL.
 - Replaceable FastAPI/PyTorch ML inference service.
-- Validated image uploads with persistent local storage or Cloudinary.
+- Image uploads with MIME/type and size filtering, plus persistent local storage or Cloudinary.
 - Analysis history with thumbnails, filters, time-based grouping, and deletion.
 - Dashboard metrics calculated from stored analyses.
 - Leaflet map with vineyard polygons and geolocated analysis points.
-- Kotlin Multiplatform mobile app with offline-first capture and synchronization.
+- Kotlin Multiplatform mobile app with a persistent offline queue and foreground synchronization.
 - Docker Compose deployment for a VM or local environment.
 
 ## Technology stack
@@ -66,6 +66,7 @@ Main variables:
 | `PUBLIC_BASE_URL` | Public URL used for locally stored images, e.g. `https://detectvid.example.com` |
 | `FRONTEND_URLS` | Comma-separated CORS origins |
 | `STORAGE_PROVIDER` | `local` for the VM or optional `cloudinary` storage |
+| `MODEL_EXPERIMENT_ID` | Deployment model ID; defaults to `exp44_4cls_field_eff_quality_aug` |
 
 For standalone backend development:
 
@@ -110,6 +111,7 @@ npm install
 cp .env.example .env
 npm run db:generate
 npm run db:migrate
+# Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD in backend/.env before seeding.
 npm run db:seed
 npm run dev
 ```
@@ -141,7 +143,7 @@ Frontend: http://localhost:5173
 ## Analysis flow
 
 1. The user selects a JPG, PNG, or WEBP image.
-2. The web application validates its type and size and displays a preview.
+2. The web application filters by declared MIME/type and size, then displays a preview; it does not perform content-level image validation.
 3. The application attempts to obtain EXIF GPS data or the device location.
 4. `frontend/src/services/mlService.js` sends the image to `/api/ml/predict`.
 5. The ML API returns the predicted class, confidence, top-class margin, and uncertainty status.
@@ -159,6 +161,10 @@ The stable integration boundary consists of:
 
 As long as the inference endpoint returns `predicted_class`, `confidence`, `probabilities`, `is_uncertain`, and `top1_margin`, the frontend does not need to change.
 
+### Model artifacts and experimental records
+
+Checkpoint binaries, datasets, manifests, and experiment-result artifacts are intentionally not stored in Git. Inference requires an externally supplied `.pth` checkpoint in `ml/checkpoints` that matches `MODEL_EXPERIMENT_ID`; no stable public download is currently provided. Reported metrics are local experimental records, not publicly reproducible benchmarks.
+
 ## Mobile
 
 Open `mobile/` in Android Studio for Android development. For iOS, open:
@@ -167,13 +173,21 @@ Open `mobile/` in Android Studio for Android development. For iOS, open:
 mobile/iosApp/DetectVID.xcodeproj
 ```
 
-The mobile application stores images in its local sandbox, maintains an offline queue, and synchronizes with:
+The mobile application stores images in its local sandbox, maintains a persistent offline queue, and synchronizes while it is in the foreground with:
 
 - `POST /api/ml/predict`
 - `POST /api/analyses`
 - `GET /api/analyses?limit=100`
 
-See `mobile/README.md` for additional details.
+See `mobile/README.md` for additional details. Background/offline synchronization is not guaranteed.
+
+## Known limitations
+
+- The inference checkpoint is untracked and must be supplied externally.
+- Field and generalization validation are still pending.
+- Uncertainty thresholds are heuristic and uncalibrated.
+- Mobile synchronization runs in the foreground; no background/offline delivery guarantee is provided.
+- Direct ML API boundary, rate limiting, and authentication hardening are out of scope for this MVP.
 
 ## Useful checks
 

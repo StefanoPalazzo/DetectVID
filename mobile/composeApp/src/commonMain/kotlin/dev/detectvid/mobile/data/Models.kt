@@ -136,6 +136,7 @@ data class MlPredictionResponse(
     @SerialName("predicted_class") val predictedClass: String,
     @SerialName("display_name") val displayName: String,
     val confidence: Double,
+    @SerialName("is_uncertain") val isUncertain: Boolean? = null,
     val probabilities: Map<String, Double> = emptyMap(),
     @SerialName("model_name") val modelName: String? = null,
 )

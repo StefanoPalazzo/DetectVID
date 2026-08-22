@@ -284,6 +284,7 @@ USE_COMPILE = False
 
 # ─── Checkpoints ─────────────────────────────────────────────────────────────
 
+# exp46 ganó el protocolo interno de validación; exp44 sigue siendo el candidato de despliegue existente por un sanity-check de campo limitado.
 EXPERIMENT_ID     = os.environ.get("MODEL_EXPERIMENT_ID", "exp44_4cls_field_eff_quality_aug")
 CHECKPOINTS_DIR   = Path(os.environ.get("CHECKPOINTS_DIR", PROJECT_ROOT / "checkpoints"))
 MODEL_CHECKPOINT_OVERRIDE = os.environ.get("MODEL_CHECKPOINT_PATH")

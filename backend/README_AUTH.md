@@ -71,10 +71,11 @@ npm run db:migrate
 ```
 
 ### 5. Cargar datos iniciales
+Definir `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` en `.env` antes de ejecutar:
 ```bash
 npm run db:seed
-# Crea: admin@detectvid.com / Admin1234!
 ```
+El seed falla si falta alguna variable y no usa credenciales predeterminadas.
 
 ### 6. Iniciar en desarrollo
 ```bash

@@ -68,10 +68,27 @@ private val classMeta = mapOf(
         ),
         recommendation = "El modelo detectó un patrón fuera de las clases principales. Se recomienda tomar una foto cercana adicional y consultar con un ingeniero agrónomo antes de decidir un tratamiento.",
     ),
+    "uncertain" to DiseaseMeta(
+        disease = "Resultado incierto",
+        diseaseKey = "uncertain",
+        status = "Incierto",
+        riskLevel = "Indeterminado",
+        riskColor = "gray",
+        urgency = "Repetir foto",
+        symptoms = listOf(
+            "El modelo no tiene suficiente certeza para emitir un diagnóstico confiable.",
+            "La foto puede tener poca luz, reflejos, distancia excesiva, encuadre incompleto o síntomas ambiguos.",
+        ),
+        recommendation = "Repetí la captura con una hoja o racimo en primer plano, buena iluminación, foco nítido y sin sombras fuertes. Si el síntoma persiste, compará varias hojas de la misma planta y pedí confirmación agronómica.",
+    ),
 )
 
 fun buildAnalysisEnvelope(image: PickedImage, prediction: MlPredictionResponse, processingTimeMs: Int): AnalysisEnvelope {
-    val meta = classMeta[prediction.predictedClass] ?: classMeta.getValue("healthy")
+    val meta = if (prediction.isUncertain == true || prediction.predictedClass !in classMeta) {
+        classMeta.getValue("uncertain")
+    } else {
+        classMeta.getValue(prediction.predictedClass)
+    }
     val confidence = (prediction.confidence * 100).roundToInt().coerceIn(0, 100)
     val affectedArea = if (meta.riskLevel == "Bajo") 0 else (((1 - prediction.confidence) * 60) + 10).roundToInt()
 
@@ -84,7 +101,7 @@ fun buildAnalysisEnvelope(image: PickedImage, prediction: MlPredictionResponse, 
             size = image.bytes.size.toLong(),
             type = image.mimeType,
             dimensions = null,
-            quality = if (confidence > 70) "good" else "low",
+            quality = if (prediction.isUncertain == true || confidence <= 70) "low" else "good",
         ),
         result = DiseaseResult(
             disease = meta.disease,
@@ -93,7 +110,11 @@ fun buildAnalysisEnvelope(image: PickedImage, prediction: MlPredictionResponse, 
             confidence = confidence,
             riskLevel = meta.riskLevel,
             riskColor = meta.riskColor,
-            affectedArea = if (meta.riskLevel == "Bajo") "~0%" else "~$affectedArea%",
+            affectedArea = when (meta.riskLevel) {
+                "Indeterminado" -> "No estimada"
+                "Bajo" -> "~0%"
+                else -> "~$affectedArea%"
+            },
             urgency = meta.urgency,
             symptoms = meta.symptoms,
             recommendation = meta.recommendation,
