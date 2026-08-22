@@ -8,18 +8,18 @@ Proyecto final de Ingeniería en Informática — Universidad de Mendoza — Ste
 
 ## Vista del producto
 
-![Dashboard de DetectVID](docs/assets/screenshots/dashboard.webp)
+![Dashboard de DetectVID](docs/assets/screenshots/dashboard.png)
 
 <details>
 <summary>Ver más capturas</summary>
 
 ### Mapa de finca
 
-![Mapa de finca de DetectVID](docs/assets/screenshots/vineyard-map.webp)
+![Mapa de finca de DetectVID](docs/assets/screenshots/vineyard-map.png)
 
 ### Inicio
 
-![Pantalla de inicio de DetectVID](docs/assets/screenshots/home.webp)
+![Pantalla de inicio de DetectVID](docs/assets/screenshots/home.png)
 
 </details>
 

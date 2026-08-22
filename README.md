@@ -7,19 +7,21 @@ DetectVID is an AgriTech platform for monitoring vineyards through image analysi
 Computer Engineering capstone project — University of Mendoza — Stefano Palazzo.
 
 ## Product preview
+### Home
 
-![DetectVID dashboard](docs/assets/screenshots/dashboard.webp)
+![DetectVID home](docs/assets/screenshots/home.png)
+
 
 <details>
 <summary>More screenshots</summary>
 
 ### Vineyard map
 
-![DetectVID vineyard map](docs/assets/screenshots/vineyard-map.webp)
+![DetectVID vineyard map](docs/assets/screenshots/vineyard-map.png)
 
-### Home
+### Dashboard
 
-![DetectVID home](docs/assets/screenshots/home.webp)
+![DetectVID dashboard](docs/assets/screenshots/dashboard.png)
 
 </details>
 
