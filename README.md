@@ -19,6 +19,10 @@ El MVP actual incluye:
 - App mobile Kotlin Multiplatform con flujo offline-first y sincronización.
 - Docker Compose para VM/local.
 
+## Arquitectura
+
+![Arquitectura del sistema DetectVID](docs/assets/detectvid-architecture.png)
+
 ## Stack
 
 | Capa | Tecnología |
